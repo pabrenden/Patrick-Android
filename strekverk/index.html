@@ -85,7 +85,7 @@ button, input, select { font: inherit; color: inherit; }
 .chip:hover { border-color: var(--accent); }
 .chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
 
-.styles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.styles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .style-btn {
   border: 1px solid var(--line); background: var(--well); border-radius: 6px; cursor: pointer;
   padding: 6px 4px 7px; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 12px;
@@ -235,6 +235,8 @@ const STYLES = {
   contour: "Koter",
   stipple: "Prikker",
   tsp:     "Én linje",
+  growth:  "Vekst",
+  string:  "Trådkunst",
 };
 const isS = (...s) => (c) => s.includes(c.style);
 
@@ -258,6 +260,15 @@ const SCHEMA = [
     { id: "points", label: "Antall punkter", type: "range", min: 200, max: 20000, step: 100, def: 5000, show: isS("stipple", "tsp") },
     { id: "dotR", label: "Prikkradius", unit: "mm", type: "range", min: 0.1, max: 2, step: 0.05, def: 0.35, show: isS("stipple") },
     { id: "tspTime", label: "Tid til linjeoptimalisering", unit: "s", type: "range", min: 0.2, max: 5, step: 0.1, def: 1.5, show: isS("tsp") },
+    { id: "growMin", label: "Tetteste avstand (mørkt)", unit: "mm", type: "range", min: 0.3, max: 5, step: 0.05, def: 1.0, show: isS("growth") },
+    { id: "growMax", label: "Løseste avstand (lyst)", unit: "mm", type: "range", min: 1, max: 20, step: 0.5, def: 6, show: isS("growth") },
+    { id: "growPoints", label: "Maks punkter", type: "range", min: 2000, max: 80000, step: 1000, def: 25000, show: isS("growth") },
+    { id: "growTime", label: "Maks veksttid", unit: "s", type: "range", min: 2, max: 90, step: 1, def: 15, show: isS("growth") },
+    { id: "saFrame", label: "Ramme", type: "select", def: "circle", options: { circle: "Sirkel", rect: "Rektangel (hele bildet)" }, show: isS("string") },
+    { id: "saPins", label: "Spiker", type: "range", min: 60, max: 600, step: 4, def: 240, show: isS("string") },
+    { id: "saLines", label: "Maks tråder", type: "range", min: 200, max: 12000, step: 100, def: 4000, show: isS("string") },
+    { id: "saWeight", label: "Hvor mye hver tråd teller", type: "range", min: 0.2, max: 3, step: 0.05, def: 1, show: isS("string") },
+    { id: "saPinsDraw", label: "Tegn spikerne som små ringer", type: "check", def: false, show: isS("string") },
   ]},
   { sec: "Penn og farge", open: true, items: [
     { id: "penWidth", label: "Pennebredde", unit: "mm", type: "range", min: 0.05, max: 1.5, step: 0.05, def: 0.3 },
@@ -766,6 +777,183 @@ function genTSP(S, L, layerIdx) {
   return [p];
 }
 
+/* ---------- Vekst og trådkunst (ideer fra code-painter, tilpasset mm og ekte penn) ----------
+   Begge kjører i en egen Web Worker og sender mellomresultater, så du ser linjen vokse. */
+const workers = new Set();
+function runWorker(fn, msg, transfer, onProgress) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(new Blob(["(" + fn.toString() + ")()"], { type: "text/javascript" }));
+    const w = new Worker(url); URL.revokeObjectURL(url);
+    workers.add(w);
+    w.onmessage = (e) => {
+      if (e.data.type === "progress") onProgress && onProgress(e.data);
+      else { workers.delete(w); w.terminate(); resolve(e.data); }
+    };
+    w.onerror = (e) => { workers.delete(w); w.terminate(); reject(e); };
+    w.postMessage(msg, transfer || []);
+  });
+}
+function stopWorkers() { for (const w of workers) w.terminate(); workers.clear(); }
+
+// Mørkhetsfeltet nedsamplet, for å sende til en worker
+function smallField(S, L, long) {
+  const k = long / Math.max(L.iw, L.ih), fw = Math.max(8, Math.round(L.iw * k)), fh = Math.max(8, Math.round(L.ih * k));
+  const f = new Float32Array(fw * fh);
+  for (let j = 0; j < fh; j++) for (let i = 0; i < fw; i++) f[j * fw + i] = S(L.ix + (i + 0.5) / fw * L.iw, L.iy + (j + 0.5) / fh * L.ih);
+  return { f, fw, fh };
+}
+
+// Differensiell vekst: én lukket linje som vokser fra den mørkeste delen. Punktene holder naboene nær (glatt linje)
+// og skyver alle andre bort innenfor sin avstand; avstanden er kort i mørke partier og lang i lyse.
+function growthWorkerMain() {
+  onmessage = (e) => {
+    const { f, fw, fh, ix, iy, iw, ih, rMin, rMax, cap, time } = e.data;
+    const at = (x, y) => f[Math.min(fh - 1, Math.max(0, ((y - iy) / ih * fh) | 0)) * fw + Math.min(fw - 1, Math.max(0, ((x - ix) / iw * fw) | 0))];
+    const x = new Float64Array(cap), y = new Float64Array(cap), nx = new Int32Array(cap), pv = new Int32Array(cap);
+    const R = new Float64Array(cap), fx = new Float64Array(cap), fy = new Float64Array(cap), link = new Int32Array(cap);
+    // frø: en liten ring i det mørkeste området (snitt over et lite vindu, så én mørk prikk ikke vinner)
+    let bi = fw >> 1, bj = fh >> 1, bd = -1;
+    for (let j = 2; j < fh - 2; j++) for (let i = 2; i < fw - 2; i++) {
+      let d = 0; for (let v = -2; v <= 2; v++) for (let u = -2; u <= 2; u++) d += f[(j + v) * fw + i + u];
+      if (d > bd) { bd = d; bi = i; bj = j; }
+    }
+    const cx = ix + (bi + 0.5) / fw * iw, cy = iy + (bj + 0.5) / fh * ih, r0 = rMin * 2;
+    let n = 16;
+    for (let i = 0; i < n; i++) { x[i] = cx + Math.cos(i / n * 6.2832) * r0; y[i] = cy + Math.sin(i / n * 6.2832) * r0; nx[i] = (i + 1) % n; pv[i] = (i - 1 + n) % n; }
+    const cs = Math.max(rMin * 2, rMax / 6), gw = Math.ceil(iw / cs) + 1, gh = Math.ceil(ih / cs) + 1, head = new Int32Array(gw * gh);
+    const t0 = performance.now(); let full = 0, last = 0, steps = 0;
+    const snapshot = () => { const P = new Float32Array(n * 2); let it = 0; for (let c = 0; c < n; c++) { P[c * 2] = x[it]; P[c * 2 + 1] = y[it]; it = nx[it]; } return P; };
+    while (performance.now() - t0 < time * 1000) {
+      steps++;
+      for (let i = 0; i < n; i++) { const d = at(x[i], y[i]); R[i] = d < 0.04 ? rMax * 1.3 : rMin + (rMax - rMin) * Math.pow(1 - Math.min(0.9, d), 2); }
+      head.fill(-1);
+      for (let i = 0; i < n; i++) { const g = Math.min(gh - 1, Math.max(0, ((y[i] - iy) / cs) | 0)) * gw + Math.min(gw - 1, Math.max(0, ((x[i] - ix) / cs) | 0)); link[i] = head[g]; head[g] = i; }
+      for (let i = 0; i < n; i++) {
+        const xi = x[i], yi = y[i], ri = R[i], p = pv[i], q = nx[i];
+        let ax = ((x[p] + x[q]) / 2 - xi) * 0.35, ay = ((y[p] + y[q]) / 2 - yi) * 0.35;
+        const gx = ((xi - ix) / cs) | 0, gy = ((yi - iy) / cs) | 0, gr = Math.min(10, Math.ceil(ri / cs));
+        for (let yy = Math.max(0, gy - gr); yy <= Math.min(gh - 1, gy + gr); yy++) for (let xx = Math.max(0, gx - gr); xx <= Math.min(gw - 1, gx + gr); xx++)
+          for (let j = head[yy * gw + xx]; j >= 0; j = link[j]) {
+            if (j === i || j === p || j === q) continue;
+            const dx = xi - x[j], dy = yi - y[j], d2 = dx * dx + dy * dy, rr = (ri + R[j]) * 0.5;
+            if (d2 >= rr * rr || d2 < 1e-9) continue;
+            const d = Math.sqrt(d2), k = (rr - d) / rr * rr * 0.8 / d; ax += dx * k; ay += dy * k;
+          }
+        if (at(xi, yi) < 0.04) { ax += (at(xi + rMax, yi) - at(xi - rMax, yi)) * rMax * 0.6; ay += (at(xi, yi + rMax) - at(xi, yi - rMax)) * rMax * 0.6; }
+        fx[i] = ax; fy[i] = ay;
+      }
+      for (let i = 0; i < n; i++) {
+        let ax = fx[i], ay = fy[i]; const l = Math.hypot(ax, ay), lim = R[i] * 0.14;
+        if (l > lim) { ax *= lim / l; ay *= lim / l; }
+        x[i] = Math.min(ix + iw, Math.max(ix, x[i] + ax)); y[i] = Math.min(iy + ih, Math.max(iy, y[i] + ay));
+      }
+      // vekst: et nytt punkt i hver kant som er strukket lenger enn avstanden
+      let grown = 0, it = (Math.random() * n) | 0;
+      const budget = Math.max(1, (n * 0.006 + 1) | 0);
+      for (let c = 0; c < n && n < cap && grown < budget; c++) {
+        const j = nx[it];
+        if (Math.hypot(x[j] - x[it], y[j] - y[it]) > Math.min(R[it], R[j]) * 0.62) {
+          const k = n++; x[k] = (x[it] + x[j]) / 2 + (Math.random() - 0.5) * 0.02; y[k] = (y[it] + y[j]) / 2 + (Math.random() - 0.5) * 0.02;
+          nx[it] = k; pv[k] = it; nx[k] = j; pv[j] = k; R[k] = R[it]; grown++;
+        }
+        it = j;
+      }
+      if (n >= cap || (grown === 0 && steps > 400)) full++; else full = 0;
+      if (full > 250) break; // ferdig: fullt, eller linjen har sluttet å vokse
+      const now = performance.now();
+      if (now - last > 120) { last = now; const P = snapshot(); postMessage({ type: "progress", P, n, t: (now - t0) / 1000 }, [P.buffer]); }
+    }
+    const P = snapshot(); postMessage({ type: "done", P, n }, [P.buffer]);
+  };
+}
+
+async function genGrowth(S, L, li, onProgress) {
+  const { f, fw, fh } = smallField(S, L, 220);
+  const rMin = Math.max(cfg.growMin, cfg.penWidth * 1.5), rMax = Math.max(cfg.growMax, rMin * 1.5);
+  const toPath = (P) => { const p = Array.from(P); if (p.length >= 4) p.push(p[0], p[1]); return chaikin(p); };
+  const res = await runWorker(growthWorkerMain, { f, fw, fh, ix: L.ix, iy: L.iy, iw: L.iw, ih: L.ih, rMin, rMax, cap: cfg.growPoints, time: cfg.growTime },
+    [f.buffer], (m) => onProgress([toPath(m.P)], `vekst: ${m.n.toLocaleString("no")} punkter, ${m.t.toFixed(0)} s`));
+  return [toPath(res.P)];
+}
+// Chaikin-glatting: myke kurver i stedet for knekk
+function chaikin(p) {
+  const o = [p[0], p[1]], n = p.length / 2;
+  for (let i = 0; i < n - 1; i++) {
+    const x0 = p[i * 2], y0 = p[i * 2 + 1], x1 = p[i * 2 + 2], y1 = p[i * 2 + 3];
+    o.push(0.75 * x0 + 0.25 * x1, 0.75 * y0 + 0.25 * y1, 0.25 * x0 + 0.75 * x1, 0.25 * y0 + 0.75 * y1);
+  }
+  o.push(p[p.length - 2], p[p.length - 1]);
+  return o;
+}
+
+// Trådkunst: én tråd mellom spiker. Fra spikeren den står på går tråden til spikeren der linjen dekker mest
+// gjenstående mørke; så trekkes linjens dekning fra, og videre. Dekningen regnes fra ekte pennebredde.
+function stringWorkerMain() {
+  onmessage = (e) => {
+    const { E, gw, gh, px, py, side, lines, minGap, weight, circle } = e.data, pins = px.length;
+    const walk = (a, b, sub) => {
+      const x0 = px[a], y0 = py[a], dx = px[b] - x0, dy = py[b] - y0, n = Math.max(1, Math.floor(Math.hypot(dx, dy)));
+      let s = 0;
+      for (let k = 0; k <= n; k++) {
+        const i = Math.min(gh - 1, Math.round(y0 + dy * k / n)) * gw + Math.min(gw - 1, Math.round(x0 + dx * k / n));
+        if (sub) E[i] -= weight; else s += E[i]; // overtegnede ruter blir negative og straffer linjen
+      }
+      return s / (n + 1);
+    };
+    const seq = [0], recent = [];
+    let cur = 0, last = 0;
+    for (let l = 0; l < lines; l++) {
+      let best = -1, bv = -0.08; // stopper når alle linjer ville gjort bildet for mørkt
+      for (let t = 0; t < pins; t++) {
+        const gap = Math.abs(t - cur), g = Math.min(gap, pins - gap);
+        if (g < minGap || (!circle && side[t] === side[cur]) || recent.includes(t)) continue;
+        const v = walk(cur, t, false);
+        if (v > bv) { bv = v; best = t; }
+      }
+      if (best < 0) break;
+      walk(cur, best, true);
+      seq.push(best); recent.push(best); if (recent.length > 20) recent.shift(); cur = best;
+      const now = performance.now();
+      if (now - last > 120) { last = now; postMessage({ type: "progress", seq: seq.slice() }); }
+    }
+    postMessage({ type: "done", seq });
+  };
+}
+
+async function genString(S, L, li, onProgress) {
+  const circle = cfg.saFrame === "circle";
+  let fx0 = L.ix, fy0 = L.iy, fwmm = L.iw, fhmm = L.ih;
+  if (circle) { const d = Math.min(L.iw, L.ih); fx0 = L.ix + (L.iw - d) / 2; fy0 = L.iy + (L.ih - d) / 2; fwmm = fhmm = d; }
+  const long = 420, k = long / Math.max(fwmm, fhmm), gw = Math.round(fwmm * k), gh = Math.round(fhmm * k), pxmm = 1 / k;
+  const E = new Float32Array(gw * gh), cx = gw / 2, cy = gh / 2;
+  for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
+    if (circle && Math.hypot(i + 0.5 - cx, j + 0.5 - cy) > gw / 2) continue;
+    const d = S(fx0 + (i + 0.5) * pxmm, fy0 + (j + 0.5) * pxmm);
+    E[j * gw + i] = Math.pow(Math.max(0, (d - 0.1) / 0.9), 1.6); // lyse partier skal være tomme
+  }
+  // spikerne, i rutenettets koordinater
+  const N = cfg.saPins, px = new Float32Array(N), py = new Float32Array(N), side = new Int8Array(N);
+  if (circle) for (let i = 0; i < N; i++) { const a = 2 * Math.PI * (i / N + li * 0.13) - Math.PI / 2; px[i] = cx + (gw / 2 - 0.5) * Math.cos(a); py[i] = cy + (gh / 2 - 0.5) * Math.sin(a); }
+  else {
+    const per = 2 * (gw + gh - 2);
+    for (let i = 0; i < N; i++) {
+      let s = ((i + li * 0.37) / N) * per;
+      if (s < gw - 1) { px[i] = s; py[i] = 0; side[i] = 0; }
+      else if ((s -= gw - 1) < gh - 1) { px[i] = gw - 1; py[i] = s; side[i] = 1; }
+      else if ((s -= gh - 1) < gw - 1) { px[i] = gw - 1 - s; py[i] = gh - 1; side[i] = 2; }
+      else { s -= gw - 1; px[i] = 0; py[i] = gh - 1 - s; side[i] = 3; }
+    }
+  }
+  const weight = Math.min(1, cfg.penWidth / pxmm) * cfg.saWeight; // hvor mye av en rute én strek dekker
+  const pinMM = (i) => [fx0 + (px[i] + 0.5) * pxmm, fy0 + (py[i] + 0.5) * pxmm];
+  const toPath = (seq) => { const p = []; for (const i of seq) p.push(...pinMM(i)); return p; };
+  const res = await runWorker(stringWorkerMain, { E, gw, gh, px, py, side, lines: cfg.saLines, minGap: circle ? Math.round(N / 12) : 2, weight, circle },
+    [E.buffer], (m) => onProgress([toPath(m.seq)], `trådkunst: ${(m.seq.length - 1).toLocaleString("no")} tråder`));
+  const out = [toPath(res.seq)];
+  if (cfg.saPinsDraw) for (let i = 0; i < N; i++) { const [x, y] = pinMM(i), r = 0.6; const c = []; for (let s = 0; s <= 8; s++) c.push(x + r * Math.cos(s / 8 * 6.2832), y + r * Math.sin(s / 8 * 6.2832)); out.push(c); }
+  return out;
+}
+
 /* ---------- Etterbehandling ---------- */
 function rdp(p, tol) {
   const n = p.length / 2;
@@ -851,12 +1039,12 @@ function penSet() {
   return [{ ch: "luma", name: "Penn 1", color: cfg.penColor }];
 }
 
-function compute() {
+async function compute(my) {
   const L = layout();
   const pens = penSet();
   const layers = [];
   let start = [0, 0];
-  pens.forEach((pen, li) => {
+  for (const [li, pen] of pens.entries()) {
     let field;
     if (pen.ch === "dark" || pen.ch === "mid") {
       const base = channelField("luma");
@@ -869,7 +1057,14 @@ function compute() {
     const S = makeSampler(field, L);
     const li2 = pens.length > 1 ? li : 0;
     let paths;
+    const onProgress = (partial, label) => {
+      if (my !== token) return;
+      $("busy").textContent = label + (pens.length > 1 ? ` · ${pen.name}` : "");
+      drawLive(L, [...layers, { ...pen, paths: partial }]);
+    };
     switch (cfg.style) {
+      case "growth": paths = await genGrowth(S, L, li2, onProgress); break;
+      case "string": paths = await genString(S, L, li2, onProgress); break;
       case "waves": paths = genWaves(S, L, li2); break;
       case "spiral": paths = genSpiral(S, L, li2); break;
       case "contour": paths = genContour(field, L); break;
@@ -878,11 +1073,12 @@ function compute() {
       default: paths = genHatch(S, L, li2, pens.length);
     }
     paths = paths.map(p => rdp(p, cfg.simplify)).filter(p => cfg.style === "stipple" || pathLen(p) >= cfg.minLen);
-    if (cfg.sort) paths = orderPaths(paths, L, start);
+    if (cfg.sort && cfg.style !== "string") paths = orderPaths(paths, L, start);
     paths = joinPaths(paths, cfg.joinTol);
     if (paths.length) { const last = paths[paths.length - 1]; start = [last[last.length - 2], last[last.length - 1]]; }
     layers.push({ ...pen, paths });
-  });
+    if (my !== token) return null;
+  }
   // statistikk
   let draw = 0, travel = 0, lifts = 0, pts = 0;
   for (const ly of layers) {
@@ -899,14 +1095,18 @@ function schedule() {
   clearTimeout(timer);
   $("busy").hidden = false;
   const my = ++token;
+  stopWorkers();
+  $("busy").textContent = "beregner…";
   timer = setTimeout(() => {
-    requestAnimationFrame(() => setTimeout(() => {
+    requestAnimationFrame(() => setTimeout(async () => {
       if (my !== token) return;
-      try { result = compute(); } catch (e) { console.error(e); toast("Noe gikk galt under beregningen."); }
+      stopAnim();
+      try { const r = await compute(my); if (my !== token || !r) return; result = r; }
+      catch (e) { if (my !== token) return; console.error(e); toast("Noe gikk galt under beregningen."); }
       $("busy").hidden = true;
-      stopAnim(); draw(); showStats();
+      draw(); showStats();
     }, 0));
-  }, cfg.style === "tsp" ? 350 : 120);
+  }, ["tsp", "growth", "string"].includes(cfg.style) ? 400 : 120);
 }
 
 function fmtTime(s) {
@@ -956,7 +1156,10 @@ function cssVar(n) { return getComputedStyle(document.documentElement).getProper
 
 function strokeSetup(T, color) {
   vctx.strokeStyle = color; vctx.lineCap = "round"; vctx.lineJoin = "round";
-  vctx.lineWidth = Math.max(cfg.penWidth, 0.6 / T.k);
+  // streker tynnere enn 1 skjermpiksel: 1 piksel bred, men gjennomsiktig i samme forhold, så tonen blir riktig
+  const px = cfg.penWidth * T.k;
+  vctx.lineWidth = px < 1 ? 1 / T.k : cfg.penWidth;
+  vctx.globalAlpha = px < 1 ? Math.max(0.08, px) : 1;
   vctx.globalCompositeOperation = cfg.colorMode === "mono" ? "source-over" : "multiply";
 }
 function strokePath(p, upto) {
@@ -974,12 +1177,23 @@ function drawTravel(T, layers) {
   vctx.stroke(); vctx.setLineDash([]);
 }
 
+// Mellomresultat mens en worker regner (vekst, trådkunst)
+function drawLive(L, layers) {
+  const T = viewTransform(); T.L = L;
+  const k = Math.min((T.W - 44 * T.dpr) / L.pw, (T.H - 44 * T.dpr) / L.ph);
+  Object.assign(T, { k, ox: (T.W - L.pw * k) / 2, oy: (T.H - L.ph * k) / 2 });
+  drawSheet(T);
+  for (const ly of layers) { strokeSetup(T, ly.color); for (const p of ly.paths) strokePath(p); }
+  vctx.globalCompositeOperation = "source-over"; vctx.globalAlpha = 1;
+}
+
 function draw() {
   if (anim) return;
   const T = viewTransform();
   drawSheet(T);
   if (!result) return;
   for (const ly of result.layers) { strokeSetup(T, ly.color); for (const p of ly.paths) strokePath(p); }
+  vctx.globalAlpha = 1;
   if (cfg.showTravel) drawTravel(T, result.layers);
   vctx.globalCompositeOperation = "source-over";
 }
@@ -1004,7 +1218,7 @@ function startAnim() {
       const [color, p] = queue[anim.qi];
       if (anim.pi === 2) {
         budget -= Math.hypot(p[0] - anim.px, p[1] - anim.py) / 2.5;
-        if (cfg.showTravel) { vctx.globalCompositeOperation = "source-over"; vctx.strokeStyle = cssVar("--travel"); vctx.lineWidth = 0.8 * T.dpr / T.k; vctx.setLineDash([2 * T.dpr / T.k, 2 * T.dpr / T.k]); vctx.beginPath(); vctx.moveTo(anim.px, anim.py); vctx.lineTo(p[0], p[1]); vctx.stroke(); vctx.setLineDash([]); }
+        if (cfg.showTravel) { vctx.globalCompositeOperation = "source-over"; vctx.globalAlpha = 1; vctx.strokeStyle = cssVar("--travel"); vctx.lineWidth = 0.8 * T.dpr / T.k; vctx.setLineDash([2 * T.dpr / T.k, 2 * T.dpr / T.k]); vctx.beginPath(); vctx.moveTo(anim.px, anim.py); vctx.lineTo(p[0], p[1]); vctx.stroke(); vctx.setLineDash([]); }
       }
       strokeSetup(T, color);
       vctx.beginPath(); vctx.moveTo(p[anim.pi - 2], p[anim.pi - 1]);
@@ -1014,7 +1228,7 @@ function startAnim() {
       anim.px = p[anim.pi - 2]; anim.py = p[anim.pi - 1];
       if (anim.pi >= p.length) { anim.qi++; anim.pi = 2; }
     }
-    vctx.globalCompositeOperation = "source-over";
+    vctx.globalCompositeOperation = "source-over"; vctx.globalAlpha = 1;
     if (anim.qi >= queue.length) { anim = null; stopAnim(); draw(); return; }
     anim.raf = requestAnimationFrame(tick);
   };
@@ -1109,6 +1323,8 @@ function drawIcon(c, k) {
   else if (k === "waves") { for (let y = 8; y < H; y += 8) { x.moveTo(0, y); for (let px = 0; px < W; px++) { const d = dark(px, y); x.lineTo(px, y + 3.4 * d * Math.sin(px * (0.3 + d * .6))); } } }
   else if (k === "spiral") { let first = true; for (let t = 0; t < 40; t += .05) { const r = t * 1.05, px = W / 2 + r * Math.cos(t), py = H / 2 + r * Math.sin(t); if (r > H * .55) break; const d = dark(px, py), o = 2 * d * Math.sin(t * 9); if (first) { x.moveTo(px + o * Math.cos(t), py); first = false; } else x.lineTo(px + o * Math.cos(t), py + o * Math.sin(t)); } }
   else if (k === "contour") { for (let r = 6; r < H * .6; r += 7) { x.moveTo(W / 2 + r * 1.3, H / 2); for (let a = 0; a <= 6.3; a += .1) x.lineTo(W / 2 + r * 1.3 * Math.cos(a) * (1 + .1 * Math.sin(a * 3)), H / 2 + r * .8 * Math.sin(a)); } }
+  else if (k === "growth") { let s = 5; const rnd = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296); const ph = Array.from({ length: 7 }, () => rnd() * 6); let first = true; for (let a = 0; a <= 6.30; a += .02) { let r = H * .34; for (let q = 0; q < 7; q++) r += Math.sin(a * (q * 3 + 4) + ph[q]) * H * .045 / (1 + q * .3); const X = W / 2 + r * 1.45 * Math.cos(a), Y = H / 2 + r * Math.sin(a); first ? (x.moveTo(X, Y), first = false) : x.lineTo(X, Y); } }
+  else if (k === "string") { const P = 28, R = H * .44, pt = (i) => [W / 2 + R * Math.cos(i / P * 6.2832), H / 2 + R * Math.sin(i / P * 6.2832)]; let c = 0; x.moveTo(...pt(0)); for (let t = 0; t < 26; t++) { c = (c + 11 + (t % 3)) % P; x.lineTo(...pt(c)); } }
   else if (k === "stipple" || k === "tsp") { let s = 3; const rnd = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296); const pts = []; for (let i = 0; i < 700 && pts.length < 90; i++) { const px = rnd() * W, py = rnd() * H; if (rnd() < dark(px, py)) pts.push([px, py]); } if (k === "stipple") for (const [px, py] of pts) { x.moveTo(px + 1.2, py); x.arc(px, py, 1.2, 0, 7); } else { let cur = pts.shift(); x.moveTo(...cur); while (pts.length) { let bi = 0, bd = 1e9; pts.forEach((p, i) => { const d = Math.hypot(p[0] - cur[0], p[1] - cur[1]); if (d < bd) { bd = d; bi = i; } }); cur = pts.splice(bi, 1)[0]; x.lineTo(...cur); } } }
   x.stroke();
 }

@@ -3,8 +3,8 @@
 Gjør et bilde om til tynne, plottervennlige streker og lagrer dem som SVG (i millimeter) eller G-code.
 Hele appen er én fil, `index.html`. Åpne den i en nettleser (også på Android). Bildet forlater aldri maskinen.
 
-Idéen er inspirert av [Code Painter](https://github.com/JasBlack/code-painter), men koden er skrevet fra bunnen av
-(Code Painter er «All rights reserved», og den lager malerier for skjerm, ikke streker for plotter).
+Idéen og stilene Vekst og Trådkunst er hentet fra [Code Painter](https://github.com/JasBlack/code-painter) og skrevet om
+for plotter: millimeter i stedet for piksler, ekte pennebredde, og SVG/G-code i stedet for et maleri på skjerm.
 
 ## Stiler
 | Stil | Hva den gjør |
@@ -15,6 +15,8 @@ Idéen er inspirert av [Code Painter](https://github.com/JasBlack/code-painter),
 | Koter | Topografiske kurver (marching squares) på tonenivåer |
 | Prikker | Blå-støy-punkter tegnet som små sirkler eller trykk |
 | Én linje | Hele bildet som én sammenhengende linje (TSP, nærmeste nabo + 2-opt) |
+| Vekst | Én lukket linje som vokser og folder seg tettere der bildet er mørkt (differensiell vekst, fra code-painter) |
+| Trådkunst | Én tråd mellom spiker i en sirkel eller langs kanten (fra code-painter). Bruk tynn penn (0,1 mm) og stort papir |
 
 ## For plotteren
 - Ekte mål: papirformat (A6–A2, Letter, kvadrat, egendefinert), marg og pennebredde i mm.
