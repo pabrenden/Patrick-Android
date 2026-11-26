@@ -16,7 +16,7 @@ for plotter: millimeter i stedet for piksler, ekte pennebredde, og SVG/G-code i 
 | Prikker | Blå-støy-punkter tegnet som små sirkler eller trykk |
 | Én linje | Hele bildet som én sammenhengende linje (TSP, nærmeste nabo + 2-opt) |
 | Vekst | Én lukket linje som vokser og folder seg tettere der bildet er mørkt (differensiell vekst, fra code-painter) |
-| Code Painter | Slipp en SVG lagret fra Code Painter («save svg»): hvert penselstrøk fylles med parallelle linjer som busthår, flater skraveres, det som er malt over skjules, og fargene samles til 1–8 penner |
+| Code Painter | Maler bildet med penselstrøk (grove til fine, langs formene i bildet). Eller slipp en SVG lagret fra Code Painter («save svg»). Hvert penselstrøk fylles med parallelle linjer som busthår, flater skraveres, det som er malt over skjules, og fargene samles til 1–8 penner |
 | Trådkunst | Én tråd mellom spiker i en sirkel eller langs kanten (fra code-painter). Bruk tynn penn (0,1 mm) og stort papir |
 
 ## For plotteren
