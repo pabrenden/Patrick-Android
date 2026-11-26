@@ -858,7 +858,14 @@ function growthWorkerMain() {
         }
         it = j;
       }
-      if (n >= cap || (grown === 0 && steps > 400)) full++; else full = 0;
+      // i starten: også noen punkter på tilfeldige steder, så den lille ringen bukter seg i stedet for å krympe
+      for (let t = 0; n < 400 && n < cap && t < 3; t++) {
+        const a = (Math.random() * n) | 0, j = nx[a];
+        if (Math.hypot(x[j] - x[a], y[j] - y[a]) < rMin * 0.25) continue;
+        const k = n++; x[k] = (x[a] + x[j]) / 2 + (Math.random() - 0.5) * rMin * 0.3; y[k] = (y[a] + y[j]) / 2 + (Math.random() - 0.5) * rMin * 0.3;
+        nx[a] = k; pv[k] = a; nx[k] = j; pv[j] = k; R[k] = R[a]; grown++;
+      }
+      if (n >= cap || (grown === 0 && n >= 400)) full++; else full = 0;
       if (full > 250) break; // ferdig: fullt, eller linjen har sluttet å vokse
       const now = performance.now();
       if (now - last > 120) { last = now; const P = snapshot(); postMessage({ type: "progress", P, n, t: (now - t0) / 1000 }, [P.buffer]); }
