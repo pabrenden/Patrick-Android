@@ -85,7 +85,7 @@ button, input, select { font: inherit; color: inherit; }
 .chip:hover { border-color: var(--accent); }
 .chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
 
-.styles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.styles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .style-btn {
   border: 1px solid var(--line); background: var(--well); border-radius: 6px; cursor: pointer;
   padding: 6px 4px 7px; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 12px;
@@ -171,7 +171,7 @@ textarea.fallback { width: 100%; height: 120px; font: 11px var(--mono); border: 
       <input id="file" type="file" accept="image/*,.svg" hidden>
       <button class="btn" id="reset" type="button">Nullstill innstillinger</button>
       <div class="demos wide" style="grid-column:1/-1" id="demos" aria-label="Eksempelbilder"></div>
-      <p class="hint" style="grid-column:1/-1">Slipp et bilde hvor som helst, eller lim inn (Ctrl+V). Bildet forlater aldri maskinen din. Slipp en lagret SVG for å hente innstillingene tilbake.</p>
+      <p class="hint" style="grid-column:1/-1">Slipp et bilde hvor som helst, eller lim inn (Ctrl+V). Bildet forlater aldri maskinen din. Slipp en SVG fra Code Painter for å plotte maleriet hans strøk for strøk, eller en SVG fra Strekverk for å hente innstillingene tilbake.</p>
     </div>
 
     <div>
@@ -237,6 +237,7 @@ const STYLES = {
   tsp:     "Én linje",
   growth:  "Vekst",
   string:  "Trådkunst",
+  codepainter: "Code Painter",
 };
 const isS = (...s) => (c) => s.includes(c.style);
 
@@ -250,7 +251,7 @@ const SCHEMA = [
   ]},
   { sec: "Strek", open: true, items: [
     { id: "spacing", label: "Linjeavstand", unit: "mm", type: "range", min: 0.3, max: 5, step: 0.05, def: 1.0, show: isS("hatch", "waves", "spiral") },
-    { id: "angle", label: "Vinkel", unit: "°", type: "range", min: 0, max: 180, step: 1, def: 45, show: isS("hatch", "waves") },
+    { id: "angle", label: "Vinkel", unit: "°", type: "range", min: 0, max: 180, step: 1, def: 45, show: (c) => ["hatch", "waves"].includes(c.style) || (c.style === "codepainter" && c.cpFill === "brush") },
     { id: "layers", label: "Skravurlag", type: "range", min: 1, max: 4, step: 1, def: 3, show: isS("hatch") },
     { id: "amp", label: "Utslag", type: "range", min: 0, max: 1.5, step: 0.05, def: 0.9, show: isS("waves", "spiral") },
     { id: "freq", label: "Bølgetetthet", unit: "/mm", type: "range", min: 0.1, max: 4, step: 0.05, def: 1.2, show: isS("waves", "spiral") },
@@ -268,13 +269,21 @@ const SCHEMA = [
     { id: "saPins", label: "Spiker", type: "range", min: 60, max: 600, step: 4, def: 240, show: isS("string") },
     { id: "saLines", label: "Maks tråder", type: "range", min: 200, max: 12000, step: 100, def: 4000, show: isS("string") },
     { id: "saWeight", label: "Hvor mye hver tråd teller", type: "range", min: 0.2, max: 3, step: 0.05, def: 1, show: isS("string") },
+    { id: "cpFill", label: "Hvordan formene tegnes", type: "select", def: "brush", options: { brush: "Fylt: strøk som busthår, flater skravert", center: "Midtlinjer og konturer", outline: "Bare konturer" }, show: isS("codepainter") },
+    { id: "cpSpacing", label: "Avstand i fyllet", unit: "mm", type: "range", min: 0.2, max: 4, step: 0.05, def: 0.7, show: (c) => c.style === "codepainter" && c.cpFill === "brush" },
+    { id: "cpTone", label: "Lyse farger får glissere fyll", type: "check", def: true, show: (c) => c.style === "codepainter" && c.cpFill === "brush" },
+    { id: "cpOutline", label: "Kontur rundt flater også", type: "check", def: false, show: (c) => c.style === "codepainter" && c.cpFill === "brush" },
+    { id: "cpPens", label: "Penner (farger hentet fra maleriet)", type: "range", min: 1, max: 8, step: 1, def: 1, show: isS("codepainter") },
+    { id: "cpMinAlpha", label: "Hopp over gjennomsiktige strøk under", type: "range", min: 0, max: 1, step: 0.05, def: 0.3, show: isS("codepainter") },
+    { id: "cpHide", label: "Skjul det som er malt over", type: "check", def: true, show: isS("codepainter") },
+    { id: "cpBg", label: "Tegn bakgrunnsfargen også", type: "check", def: false, show: isS("codepainter") },
     { id: "saPinsDraw", label: "Tegn spikerne som små ringer", type: "check", def: false, show: isS("string") },
   ]},
   { sec: "Penn og farge", open: true, items: [
     { id: "penWidth", label: "Pennebredde", unit: "mm", type: "range", min: 0.05, max: 1.5, step: 0.05, def: 0.3 },
-    { id: "colorMode", label: "Penner", type: "select", def: "mono", options: { mono: "Én penn", cmyk: "Fire penner (CMYK)", duo: "To penner (mørk + mellomtone)" } },
-    { id: "penColor", label: "Pennefarge", type: "color", def: "#1b2036", show: (c) => c.colorMode !== "cmyk" },
-    { id: "penColor2", label: "Penn 2 (mellomtone)", type: "color", def: "#2f6fd0", show: (c) => c.colorMode === "duo" },
+    { id: "colorMode", label: "Penner", type: "select", def: "mono", options: { mono: "Én penn", cmyk: "Fire penner (CMYK)", duo: "To penner (mørk + mellomtone)" }, show: (c) => c.style !== "codepainter" },
+    { id: "penColor", label: "Pennefarge", type: "color", def: "#1b2036", show: (c) => c.style === "codepainter" ? c.cpPens === 1 : c.colorMode !== "cmyk" },
+    { id: "penColor2", label: "Penn 2 (mellomtone)", type: "color", def: "#2f6fd0", show: (c) => c.colorMode === "duo" && c.style !== "codepainter" },
     { id: "speed", label: "Tegnefart (for tidsestimat)", unit: "mm/s", type: "range", min: 10, max: 200, step: 5, def: 40 },
   ]},
   { sec: "Papir", open: false, items: [
@@ -308,6 +317,7 @@ const ALL = SCHEMA.flatMap(s => s.items);
 const DEFAULTS = Object.fromEntries([["style", "hatch"], ...ALL.map(i => [i.id, i.def])]);
 let cfg = { ...DEFAULTS };
 try { const s = JSON.parse(localStorage.getItem("strekverk.cfg") || "null"); if (s) cfg = { ...DEFAULTS, ...s }; } catch (e) {}
+if (cfg.style === "codepainter") cfg.style = "hatch"; // maleriet lagres ikke mellom besøk
 const saveCfg = () => { try { localStorage.setItem("strekverk.cfg", JSON.stringify(cfg)); } catch (e) {} };
 
 /* ---------- UI-bygging ---------- */
@@ -397,6 +407,7 @@ async function loadFile(file) {
       try { cfg = { ...DEFAULTS, ...JSON.parse(m[1].replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&")) }; syncUI(); saveCfg(); schedule("load"); toast("Innstillingene er hentet fra SVG-en"); return; }
       catch (e) {}
     }
+    if (await loadCodePainterSVG(text, file.name)) return;
   }
   try {
     const url = URL.createObjectURL(file);
@@ -961,6 +972,259 @@ async function genString(S, L, li, onProgress) {
   return out;
 }
 
+/* ---------- Code Painter-import ----------
+   Code Painters SVG består av former: buede penselstrøk (path med Q og stroke-width), ellipser og polygoner,
+   hver med en fargeovergang og en opasitet. Her blir de til plotterstreker: strøk fylles med parallelle linjer
+   over bredden (som busthår), flater skraveres, og det som er malt over senere, blir skjult. */
+let cpDoc = null; // { w, h, bg, shapes: [...] }
+
+function parseColor(c) {
+  if (!c) return null;
+  c = c.trim();
+  let m = c.match(/^#([0-9a-f]{3})$/i);
+  if (m) return [...m[1]].map(h => parseInt(h + h, 16));
+  m = c.match(/^#([0-9a-f]{6})$/i);
+  if (m) return [0, 2, 4].map(i => parseInt(m[1].substr(i, 2), 16));
+  m = c.match(/rgba?\(([^)]+)\)/i);
+  if (m) return m[1].split(",").slice(0, 3).map(v => parseFloat(v));
+  return null;
+}
+// SVG-transform → matrise [a b c d e f]
+function parseTransform(t) {
+  let M = [1, 0, 0, 1, 0, 0];
+  const mul = (A, B) => [A[0] * B[0] + A[2] * B[1], A[1] * B[0] + A[3] * B[1], A[0] * B[2] + A[2] * B[3], A[1] * B[2] + A[3] * B[3], A[0] * B[4] + A[2] * B[5] + A[4], A[1] * B[4] + A[3] * B[5] + A[5]];
+  if (!t) return M;
+  for (const [, fn, args] of t.matchAll(/(\w+)\s*\(([^)]*)\)/g)) {
+    const a = args.split(/[\s,]+/).filter(Boolean).map(Number);
+    let T = [1, 0, 0, 1, 0, 0];
+    if (fn === "translate") T = [1, 0, 0, 1, a[0] || 0, a[1] || 0];
+    else if (fn === "scale") T = [a[0], 0, 0, a.length > 1 ? a[1] : a[0], 0, 0];
+    else if (fn === "rotate") {
+      const r = a[0] * Math.PI / 180, c = Math.cos(r), s = Math.sin(r);
+      T = [c, s, -s, c, 0, 0];
+      if (a.length > 2) T = mul(mul([1, 0, 0, 1, a[1], a[2]], T), [1, 0, 0, 1, -a[1], -a[2]]);
+    } else if (fn === "matrix") T = a.slice(0, 6);
+    M = mul(M, T);
+  }
+  return M;
+}
+const applyM = (M, x, y) => [M[0] * x + M[2] * y + M[4], M[1] * x + M[3] * y + M[5]];
+
+function parseCodePainterSVG(text) {
+  const doc = new DOMParser().parseFromString(text, "image/svg+xml");
+  const svg = doc.querySelector("svg");
+  if (!svg) return null;
+  const vb = (svg.getAttribute("viewBox") || "").split(/[\s,]+/).map(Number);
+  const w = vb.length === 4 ? vb[2] : parseFloat(svg.getAttribute("width")) || 1000;
+  const h = vb.length === 4 ? vb[3] : parseFloat(svg.getAttribute("height")) || 1000;
+  const grads = {};
+  for (const g of doc.querySelectorAll("linearGradient, radialGradient")) {
+    const stops = [...g.querySelectorAll("stop")].map(s => parseColor(s.getAttribute("stop-color") || (s.getAttribute("style") || "").replace(/.*stop-color:\s*([^;]+).*/, "$1"))).filter(Boolean);
+    if (!stops.length) continue;
+    const avg = [0, 1, 2].map(k => stops.reduce((a, c) => a + c[k], 0) / stops.length);
+    const ang = g.tagName.toLowerCase().includes("linear") ? Math.atan2(+g.getAttribute("y2") - +g.getAttribute("y1"), +g.getAttribute("x2") - +g.getAttribute("x1")) : null;
+    grads[g.id] = { color: avg, ang, soft: !g.tagName.toLowerCase().includes("linear") };
+  }
+  const paint = (v) => { if (!v || v === "none") return null; const m = v.match(/url\(#([^)]+)\)/); return m ? grads[m[1]] || null : { color: parseColor(v), ang: null }; };
+  const shapes = [];
+  let bg = null;
+  const ctm = (el) => { let M = [1, 0, 0, 1, 0, 0]; const chain = []; for (let e = el; e && e !== svg; e = e.parentElement) chain.unshift(e); for (const e of chain) M = (() => { const T = parseTransform(e.getAttribute("transform")); return [M[0] * T[0] + M[2] * T[1], M[1] * T[0] + M[3] * T[1], M[0] * T[2] + M[2] * T[3], M[1] * T[2] + M[3] * T[3], M[0] * T[4] + M[2] * T[5] + M[4], M[1] * T[4] + M[3] * T[5] + M[5]]; })(); return M; };
+  for (const el of svg.querySelectorAll("rect, ellipse, circle, polygon, path")) {
+    if (el.closest("defs")) continue;
+    const op = parseFloat(el.getAttribute("opacity") ?? "1");
+    const M = ctm(el);
+    const fill = paint(el.getAttribute("fill")), stroke = paint(el.getAttribute("stroke"));
+    const tag = el.tagName.toLowerCase();
+    if (tag === "rect") {
+      const x = +el.getAttribute("x") || 0, y = +el.getAttribute("y") || 0, rw = +el.getAttribute("width") || 0, rh = +el.getAttribute("height") || 0;
+      if (!fill?.color) continue;
+      if (!shapes.length && rw >= w * 0.98 && rh >= h * 0.98) { bg = fill.color; continue; } // bakgrunnen
+      shapes.push({ kind: "poly", pts: [[x, y], [x + rw, y], [x + rw, y + rh], [x, y + rh]].flatMap(([a, b]) => applyM(M, a, b)), color: fill.color, ang: fill.ang, alpha: op });
+    } else if (tag === "ellipse" || tag === "circle") {
+      if (!fill?.color) continue;
+      const cx = +el.getAttribute("cx") || 0, cy = +el.getAttribute("cy") || 0;
+      const rx = +(el.getAttribute("rx") ?? el.getAttribute("r")) || 0, ry = +(el.getAttribute("ry") ?? el.getAttribute("r")) || 0;
+      const k = fill.soft ? 0.8 : 1, pts = []; // myk klatt: den synlige delen er litt mindre enn ellipsen
+      for (let i = 0; i < 48; i++) { const a = i / 48 * 2 * Math.PI; pts.push(...applyM(M, cx + Math.cos(a) * rx * k, cy + Math.sin(a) * ry * k)); }
+      shapes.push({ kind: "poly", pts, color: fill.color, ang: fill.ang, alpha: op, soft: !!fill.soft });
+    } else if (tag === "polygon") {
+      if (!fill?.color) continue;
+      const n = (el.getAttribute("points") || "").trim().split(/[\s,]+/).map(Number), pts = [];
+      for (let i = 0; i + 1 < n.length; i += 2) pts.push(...applyM(M, n[i], n[i + 1]));
+      shapes.push({ kind: "poly", pts, color: fill.color, ang: fill.ang, alpha: op });
+    } else if (tag === "path") {
+      const d = el.getAttribute("d") || "";
+      const m = d.match(/^\s*M\s*([-\d.e]+)[\s,]+([-\d.e]+)\s*Q\s*([-\d.e]+)[\s,]+([-\d.e]+)[\s,]+([-\d.e]+)[\s,]+([-\d.e]+)\s*$/i);
+      const lw = parseFloat(el.getAttribute("stroke-width") || "1");
+      if (m && stroke?.color) {
+        const v = m.slice(1).map(Number), q = [];
+        for (let i = 0; i < 6; i += 2) q.push(...applyM(M, v[i], v[i + 1]));
+        const scale = Math.sqrt(Math.abs(M[0] * M[3] - M[1] * M[2])) || 1;
+        shapes.push({ kind: "stroke", q, width: lw * scale, color: stroke.color, alpha: op });
+      }
+    }
+  }
+  return shapes.length ? { w, h, bg, shapes } : null;
+}
+
+const luma = (c) => (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255;
+function toneOf(dark) {
+  let v = cfg.invert ? 1 - dark : dark;
+  v = clamp((v - 0.5) * cfg.contrast + 0.5 - cfg.brightness, 0, 1);
+  return Math.pow(v, cfg.gamma);
+}
+// Farger → et lite antall penner (k-means vektet med areal), lyse penner først
+function palette(shapes, K) {
+  const cols = shapes.map(s => s.color), wts = shapes.map(s => s.area || 1);
+  const C = [cols[wts.indexOf(Math.max(...wts))].slice()];
+  while (C.length < K) { // lengst unna eksisterende senter
+    let bi = 0, bd = -1;
+    cols.forEach((c, i) => { const d = Math.min(...C.map(q => (q[0] - c[0]) ** 2 + (q[1] - c[1]) ** 2 + (q[2] - c[2]) ** 2)) * Math.sqrt(wts[i]); if (d > bd) { bd = d; bi = i; } });
+    C.push(cols[bi].slice());
+  }
+  const asg = new Int32Array(cols.length);
+  for (let it = 0; it < 12; it++) {
+    cols.forEach((c, i) => { let b = 0, bd = Infinity; C.forEach((q, k) => { const d = (q[0] - c[0]) ** 2 + (q[1] - c[1]) ** 2 + (q[2] - c[2]) ** 2; if (d < bd) { bd = d; b = k; } }); asg[i] = b; });
+    const S = C.map(() => [0, 0, 0, 0]);
+    cols.forEach((c, i) => { const s = S[asg[i]]; s[0] += c[0] * wts[i]; s[1] += c[1] * wts[i]; s[2] += c[2] * wts[i]; s[3] += wts[i]; });
+    S.forEach((s, k) => { if (s[3]) C[k] = [s[0] / s[3], s[1] / s[3], s[2] / s[3]]; });
+  }
+  const order = C.map((c, k) => k).sort((a, b) => luma(C[b]) - luma(C[a]));
+  const remap = new Int32Array(K); order.forEach((k, i) => remap[k] = i);
+  return { colors: order.map(k => C[k]), asg: Array.from(asg, a => remap[a]) };
+}
+const toHex = (c) => "#" + c.map(v => Math.round(clamp(v, 0, 255)).toString(16).padStart(2, "0")).join("");
+
+function genCodePainter(L) {
+  const D = cpDoc, sc = L.iw / D.w; // mm per SVG-enhet
+  const X = (x) => L.ix + x * sc, Y = (y) => L.iy + y * sc;
+  // hvilke former som er med
+  let list = D.shapes.filter(s => s.alpha >= cfg.cpMinAlpha);
+  if (cfg.cpBg && D.bg) list = [{ kind: "poly", pts: [0, 0, D.w, 0, D.w, D.h, 0, D.h], color: D.bg, alpha: 1, ang: null, bg: true }, ...list];
+  for (const s of list) {
+    if (s.kind === "stroke") { const [x0, y0, x1, y1, x2, y2] = s.q; s.area = (Math.hypot(x1 - x0, y1 - y0) + Math.hypot(x2 - x1, y2 - y1)) * s.width; }
+    else { let a = 0; const p = s.pts, n = p.length / 2; for (let i = 0; i < n; i++) { const j = (i + 1) % n; a += p[i * 2] * p[j * 2 + 1] - p[j * 2] * p[i * 2 + 1]; } s.area = Math.abs(a / 2) + 1; }
+  }
+  // synlighetskart: hver form tegnes i sin egen «farge» (nummer) i maling-rekkefølge; det som vinner en piksel, er synlig der
+  const VB = 1600, q = VB / Math.max(D.w, D.h), vw = Math.ceil(D.w * q), vh = Math.ceil(D.h * q);
+  let ids = null;
+  if (cfg.cpHide) {
+    const c = document.createElement("canvas"); c.width = vw; c.height = vh;
+    const x = c.getContext("2d", { willReadFrequently: true });
+    x.fillStyle = "#000"; x.fillRect(0, 0, vw, vh);
+    list.forEach((s, i) => {
+      const col = "#" + (i + 1).toString(16).padStart(6, "0");
+      x.beginPath();
+      if (s.kind === "stroke") { const [x0, y0, x1, y1, x2, y2] = s.q; x.moveTo(x0 * q, y0 * q); x.quadraticCurveTo(x1 * q, y1 * q, x2 * q, y2 * q); x.strokeStyle = col; x.lineWidth = s.width * q; x.lineCap = "round"; x.stroke(); }
+      else { const p = s.pts; x.moveTo(p[0] * q, p[1] * q); for (let k = 2; k < p.length; k += 2) x.lineTo(p[k] * q, p[k + 1] * q); x.closePath(); x.fillStyle = col; x.fill(); }
+    });
+    const d = x.getImageData(0, 0, vw, vh).data;
+    ids = new Int32Array(vw * vh);
+    for (let i = 0; i < vw * vh; i++) ids[i] = (d[i * 4] << 16 | d[i * 4 + 1] << 8 | d[i * 4 + 2]) - 1;
+  }
+  const visible = (i, x, y) => {
+    if (!ids) return true;
+    const px = (x * q) | 0, py = (y * q) | 0;
+    if (px < 0 || py < 0 || px >= vw || py >= vh) return false;
+    return ids[py * vw + px] === i;
+  };
+  // penner
+  const multi = cfg.cpPens > 1 && list.length >= cfg.cpPens;
+  const pal = multi ? palette(list, cfg.cpPens) : null;
+  const layers = multi ? pal.colors.map((c, k) => ({ name: `Penn ${k + 1}`, color: toHex(c), paths: [] })) : [{ name: "Penn 1", color: cfg.penColor, paths: [] }];
+  const step = 0.3 / sc; // prøveavstand langs linjene, i SVG-enheter
+  list.forEach((s, i) => {
+    const out = layers[multi ? pal.asg[i] : 0].paths;
+    let sp = cfg.cpSpacing / sc;
+    if (cfg.cpTone) {
+      const d = toneOf(1 - luma(s.color));
+      if (!multi) { if (d < 0.04) return; sp /= Math.max(0.12, d); }
+      else sp /= Math.max(0.35, 0.35 + 0.65 * d);
+    }
+    const runs = new Runs();
+    const put = (x, y) => { if (visible(i, x, y)) runs.add(X(x), Y(y)); else runs.lift(); };
+    if (s.kind === "stroke") {
+      const [x0, y0, x1, y1, x2, y2] = s.q;
+      const P = (t) => { const u = 1 - t; return [u * u * x0 + 2 * u * t * x1 + t * t * x2, u * u * y0 + 2 * u * t * y1 + t * t * y2]; };
+      const T = (t) => { const dx = 2 * (1 - t) * (x1 - x0) + 2 * t * (x2 - x1), dy = 2 * (1 - t) * (y1 - y0) + 2 * t * (y2 - y1), l = Math.hypot(dx, dy) || 1; return [dx / l, dy / l]; };
+      const len = Math.hypot(x1 - x0, y1 - y0) + Math.hypot(x2 - x1, y2 - y1), N = Math.max(2, Math.ceil(len / step));
+      const lines = cfg.cpFill === "brush" ? Math.max(1, Math.round(s.width / sp)) : 1;
+      for (let k = 0; k < lines; k++) {
+        const o = lines === 1 ? 0 : (-(lines - 1) / 2 + k) * (s.width / lines);
+        // de runde endene: linjen forlenges så langt halvsirkelen rekker ved denne forskyvningen
+        const ext = Math.sqrt(Math.max(0, (s.width / 2) ** 2 - o * o)), E = Math.ceil(ext / step);
+        const [sx, sy] = P(0), [stx, sty] = T(0), [ex, ey] = P(1), [etx, ety] = T(1);
+        const seq = [];
+        for (let j = E; j > 0; j--) { const e = ext * j / E; seq.push([sx - stx * e - sty * o, sy - sty * e + stx * o]); }
+        for (let j = 0; j <= N; j++) { const t = j / N, [px, py] = P(t), [tx, ty] = T(t); seq.push([px - ty * o, py + tx * o]); }
+        for (let j = 1; j <= E; j++) { const e = ext * j / E; seq.push([ex + etx * e - ety * o, ey + ety * e + etx * o]); }
+        if (k % 2) seq.reverse();
+        for (const [px, py] of seq) put(px, py);
+        runs.lift();
+      }
+    } else {
+      const p = s.pts, n = p.length / 2;
+      let cx = 0, cy = 0; for (let k = 0; k < n; k++) { cx += p[k * 2]; cy += p[k * 2 + 1]; } cx /= n; cy /= n;
+      if (cfg.cpFill === "brush") {
+        // skravur inni flaten, på tvers av fargeovergangen
+        const a = (s.ang != null ? s.ang + Math.PI / 2 : cfg.angle * Math.PI / 180), ux = Math.cos(a), uy = Math.sin(a), nx = -uy, ny = ux;
+        let vmin = Infinity, vmax = -Infinity;
+        for (let k = 0; k < n; k++) { const v = p[k * 2] * nx + p[k * 2 + 1] * ny; vmin = Math.min(vmin, v); vmax = Math.max(vmax, v); }
+        let row = 0;
+        for (let v = vmin + sp / 2; v < vmax; v += sp, row++) {
+          const xs = [];
+          for (let k = 0; k < n; k++) {
+            const j = (k + 1) % n, ax = p[k * 2], ay = p[k * 2 + 1], bx = p[j * 2], by = p[j * 2 + 1];
+            const va = ax * nx + ay * ny, vb = bx * nx + by * ny;
+            if ((va <= v) !== (vb <= v)) { const t = (v - va) / (vb - va); xs.push((ax + (bx - ax) * t) * ux + (ay + (by - ay) * t) * uy); }
+          }
+          xs.sort((A, B) => A - B);
+          if (row % 2) xs.reverse();
+          for (let k = 0; k + 1 < xs.length; k += 2) {
+            const u0 = xs[k], u1 = xs[k + 1], m = Math.max(1, Math.ceil(Math.abs(u1 - u0) / step));
+            for (let j = 0; j <= m; j++) { const u = u0 + (u1 - u0) * j / m; put(u * ux + v * nx, u * uy + v * ny); }
+            runs.lift();
+          }
+        }
+      }
+      if (cfg.cpFill !== "brush" || (!s.soft && !s.bg && cfg.cpOutline)) {
+        // konturen, prøvd litt innenfor kanten (selve kanten er glattet i synlighetskartet)
+        const inset = 1.5 / q;
+        for (let k = 0; k <= n; k++) {
+          const a = k % n, b = (k + 1) % n, ax = p[a * 2], ay = p[a * 2 + 1], bx = p[b * 2], by = p[b * 2 + 1];
+          const m = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / step));
+          for (let j = 0; j < m; j++) {
+            const x = ax + (bx - ax) * j / m, y = ay + (by - ay) * j / m, dl = Math.hypot(cx - x, cy - y) || 1;
+            if (visible(i, x + (cx - x) / dl * inset, y + (cy - y) / dl * inset)) runs.add(X(x), Y(y)); else runs.lift();
+          }
+        }
+        runs.lift();
+      }
+    }
+    runs.lift();
+    for (const r of runs.out) out.push(r);
+  });
+  return layers;
+}
+
+async function loadCodePainterSVG(text, name) {
+  const doc = parseCodePainterSVG(text);
+  if (!doc) return false;
+  cpDoc = doc;
+  // bildet selv lastes også, så de andre stilene og «vis bildet under» virker
+  await new Promise((res) => {
+    const url = URL.createObjectURL(new Blob([text], { type: "image/svg+xml" }));
+    const im = new Image();
+    im.onload = () => { const c = document.createElement("canvas"); const k = 1600 / Math.max(doc.w, doc.h); c.width = Math.round(doc.w * k); c.height = Math.round(doc.h * k); c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(url); img = null; loadBitmapSource(c, name); res(); };
+    im.onerror = () => { URL.revokeObjectURL(url); const c = document.createElement("canvas"); c.width = Math.round(doc.w); c.height = Math.round(doc.h); c.getContext("2d").fillStyle = "#fff"; loadBitmapSource(c, name); res(); };
+    im.src = url;
+  });
+  cfg.style = "codepainter"; syncUI(); saveCfg(); schedule();
+  for (const c of document.querySelectorAll("#demos .chip")) c.setAttribute("aria-pressed", "false");
+  toast(`Fant ${doc.shapes.length.toLocaleString("no")} former fra Code Painter`);
+  return true;
+}
+
 /* ---------- Etterbehandling ---------- */
 function rdp(p, tol) {
   const n = p.length / 2;
@@ -1048,9 +1312,19 @@ function penSet() {
 
 async function compute(my) {
   const L = layout();
-  const pens = penSet();
+  const pens = cfg.style === "codepainter" ? [] : penSet();
   const layers = [];
   let start = [0, 0];
+  if (cfg.style === "codepainter" && cpDoc) {
+    for (const ly of genCodePainter(L)) {
+      if (cfg.cpPens > 1 && luma(parseColor(ly.color)) > 0.9) continue; // nesten hvitt: det er papiret som gjør jobben
+      let paths = ly.paths.map(p => rdp(p, cfg.simplify)).filter(p => pathLen(p) >= cfg.minLen);
+      if (cfg.sort) paths = orderPaths(paths, L, start);
+      paths = joinPaths(paths, cfg.joinTol);
+      if (paths.length) { const last = paths[paths.length - 1]; start = [last[last.length - 2], last[last.length - 1]]; }
+      layers.push({ ...ly, paths });
+    }
+  }
   for (const [li, pen] of pens.entries()) {
     let field;
     if (pen.ch === "dark" || pen.ch === "mid") {
@@ -1316,7 +1590,10 @@ function buildStyles() {
     const b = document.createElement("button");
     b.type = "button"; b.className = "style-btn"; b.dataset.style = k;
     b.innerHTML = `<canvas width="120" height="76" aria-hidden="true"></canvas><span>${name}</span>`;
-    b.addEventListener("click", () => { cfg.style = k; syncUI(); saveCfg(); schedule(); });
+    b.addEventListener("click", () => {
+      if (k === "codepainter" && !cpDoc) { toast("Lagre maleriet som SVG i Code Painter (save svg), og slipp filen her."); $("file").click(); return; }
+      cfg.style = k; syncUI(); saveCfg(); schedule();
+    });
     host.appendChild(b);
     drawIcon(b.querySelector("canvas"), k);
   }
@@ -1330,6 +1607,7 @@ function drawIcon(c, k) {
   else if (k === "waves") { for (let y = 8; y < H; y += 8) { x.moveTo(0, y); for (let px = 0; px < W; px++) { const d = dark(px, y); x.lineTo(px, y + 3.4 * d * Math.sin(px * (0.3 + d * .6))); } } }
   else if (k === "spiral") { let first = true; for (let t = 0; t < 40; t += .05) { const r = t * 1.05, px = W / 2 + r * Math.cos(t), py = H / 2 + r * Math.sin(t); if (r > H * .55) break; const d = dark(px, py), o = 2 * d * Math.sin(t * 9); if (first) { x.moveTo(px + o * Math.cos(t), py); first = false; } else x.lineTo(px + o * Math.cos(t), py + o * Math.sin(t)); } }
   else if (k === "contour") { for (let r = 6; r < H * .6; r += 7) { x.moveTo(W / 2 + r * 1.3, H / 2); for (let a = 0; a <= 6.3; a += .1) x.lineTo(W / 2 + r * 1.3 * Math.cos(a) * (1 + .1 * Math.sin(a * 3)), H / 2 + r * .8 * Math.sin(a)); } }
+  else if (k === "codepainter") { for (let i = 0; i < 9; i++) { const y0 = 12 + i * 6.5, bend = Math.sin(i * 1.7) * 10; for (let j = 0; j < 3; j++) { x.moveTo(14 + i * 3, y0 + j * 1.6); x.quadraticCurveTo(W / 2, y0 + bend + j * 1.6, W - 14 - i * 2, y0 + 4 + j * 1.6); } } }
   else if (k === "growth") { let s = 5; const rnd = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296); const ph = Array.from({ length: 7 }, () => rnd() * 6); let first = true; for (let a = 0; a <= 6.30; a += .02) { let r = H * .34; for (let q = 0; q < 7; q++) r += Math.sin(a * (q * 3 + 4) + ph[q]) * H * .045 / (1 + q * .3); const X = W / 2 + r * 1.45 * Math.cos(a), Y = H / 2 + r * Math.sin(a); first ? (x.moveTo(X, Y), first = false) : x.lineTo(X, Y); } }
   else if (k === "string") { const P = 28, R = H * .44, pt = (i) => [W / 2 + R * Math.cos(i / P * 6.2832), H / 2 + R * Math.sin(i / P * 6.2832)]; let c = 0; x.moveTo(...pt(0)); for (let t = 0; t < 26; t++) { c = (c + 11 + (t % 3)) % P; x.lineTo(...pt(c)); } }
   else if (k === "stipple" || k === "tsp") { let s = 3; const rnd = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296); const pts = []; for (let i = 0; i < 700 && pts.length < 90; i++) { const px = rnd() * W, py = rnd() * H; if (rnd() < dark(px, py)) pts.push([px, py]); } if (k === "stipple") for (const [px, py] of pts) { x.moveTo(px + 1.2, py); x.arc(px, py, 1.2, 0, 7); } else { let cur = pts.shift(); x.moveTo(...cur); while (pts.length) { let bi = 0, bd = 1e9; pts.forEach((p, i) => { const d = Math.hypot(p[0] - cur[0], p[1] - cur[1]); if (d < bd) { bd = d; bi = i; } }); cur = pts.splice(bi, 1)[0]; x.lineTo(...cur); } } }
