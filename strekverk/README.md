@@ -17,6 +17,7 @@ for plotter: millimeter i stedet for piksler, ekte pennebredde, og SVG/G-code i 
 | Én linje | Hele bildet som én sammenhengende linje (TSP, nærmeste nabo + 2-opt) |
 | Vekst | Én lukket linje som vokser og folder seg tettere der bildet er mørkt (differensiell vekst, fra code-painter) |
 | Code Painter | Maler bildet med penselstrøk (grove til fine, langs formene i bildet). Eller slipp en SVG lagret fra Code Painter («save svg»). Hvert penselstrøk fylles med parallelle linjer som busthår, flater skraveres, det som er malt over skjules, og fargene samles til 1–8 penner |
+| Strektegning (AI) | En AI-modell ([Informative Drawings](https://github.com/carolineec/informative-drawings), Chan m.fl. CVPR 2022, MIT-lisens; ONNX fra [ipsilondev/informative-drawings-onnx](https://huggingface.co/ipsilondev/informative-drawings-onnx)) tegner streker av et foto direkte i nettleseren. Tynne streker følges langs midten, tykke svarte partier skraveres og får kontur. Kan også bruke en ferdig strektegning, f.eks. fra APDrawingGAN |
 | Trådkunst | Én tråd mellom spiker i en sirkel eller langs kanten (fra code-painter). Bruk tynn penn (0,1 mm) og stort papir |
 
 ## For plotteren
@@ -27,3 +28,5 @@ for plotter: millimeter i stedet for piksler, ekte pennebredde, og SVG/G-code i 
 - «Simuler plotting» tegner strekene i den rekkefølgen plotteren vil gjøre det.
 - Eksport: SVG, én SVG per penn, G-code (GRBL/servo, kommandoene kan endres) eller kopier SVG.
 - Innstillingene lagres i SVG-en. Slipp SVG-en tilbake i appen for å hente dem.
+
+AI-stilen laster modellen (ca. 9 MB) fra Hugging Face og onnxruntime-web fra jsDelivr første gang den brukes.
