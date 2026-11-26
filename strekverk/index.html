@@ -1336,8 +1336,16 @@ async function getSession(name) {
   if (!sessions[name]) sessions[name] = (async () => {
     const ort = await getOrt();
     let buf = null;
-    for (const url of [`models/${name}.onnx`, HF_MODEL(name)]) {
-      try { const r = await fetch(url); if (r.ok) { buf = await r.arrayBuffer(); break; } } catch (e) {}
+    for (const url of [`models/${name}.onnx`, `models/${name}.onnx.b64.txt`, HF_MODEL(name)]) {
+      try {
+        const r = await fetch(url); if (!r.ok) continue;
+        if (url.endsWith(".b64.txt")) { // modellen pakket som tekst (claude.ai serverer ikke .onnx)
+          const bin = atob((await r.text()).trim()), u = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+          buf = u.buffer;
+        } else buf = await r.arrayBuffer();
+        break;
+      } catch (e) {}
     }
     if (!buf) throw new Error("Fant ikke modellfilen");
     return ort.InferenceSession.create(buf, { executionProviders: ["wasm"] });
