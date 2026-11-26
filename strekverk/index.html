@@ -1057,7 +1057,20 @@ function gcodeFor() {
 }
 
 function baseName() { return "strekverk-" + cfg.style + "-" + (cfg.paper === "Egendefinert" ? "egen" : cfg.paper.replace(/\s+/g, "")); }
-function download(name, text, type) {
+// I claude.ai-artefakter går lagring via plattformens nedlastingsfunksjon; ellers vanlig nedlasting.
+const dlCap = window.claude?.use ? window.claude.use("downloads").catch(() => null) : Promise.resolve(null);
+async function download(name, text, type) {
+  const cap = await dlCap;
+  if (cap) {
+    if (name.endsWith(".gcode")) name += ".txt"; // .gcode er ikke tillatt der
+    try { await cap.save({ filename: name, data: text }); toast("Lagret " + name); }
+    catch (e) {
+      if (e?.code === "declined") return;
+      if (e?.code === "rate_limited") { toast("Vent litt og prøv igjen."); return; }
+      showFallback(text); toast("Kunne ikke lagre her. Kopier teksten under.");
+    }
+    return;
+  }
   try {
     const url = URL.createObjectURL(new Blob([text], { type }));
     const a = document.createElement("a"); a.href = url; a.download = name;
@@ -1114,7 +1127,12 @@ $("play").addEventListener("click", () => anim ? (stopAnim(), draw()) : startAni
 $("dl-svg").addEventListener("click", () => result && download(baseName() + ".svg", svgFor(result.layers), "image/svg+xml"));
 $("dl-layers").addEventListener("click", () => {
   if (!result) return;
-  result.layers.forEach((ly, i) => setTimeout(() => download(`${baseName()}-${i + 1}-${ly.name.toLowerCase().replace(/\s+/g, "")}.svg`, svgFor([ly]), "image/svg+xml"), i * 400));
+  (async () => { // én om gangen, så nettleseren ikke blokkerer flere nedlastinger
+    for (const [i, ly] of result.layers.entries()) {
+      await download(`${baseName()}-${i + 1}-${ly.name.toLowerCase().replace(/\s+/g, "")}.svg`, svgFor([ly]), "image/svg+xml");
+      await new Promise(r => setTimeout(r, 400));
+    }
+  })();
 });
 $("dl-gcode").addEventListener("click", () => result && download(baseName() + ".gcode", gcodeFor(), "text/plain"));
 $("copy-svg").addEventListener("click", () => result && copy(svgFor(result.layers)));
