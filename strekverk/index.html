@@ -1,0 +1,1986 @@
+<!doctype html>
+<html lang="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Strekverk</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Gjør bilder om til tynne, plottervennlige streker og lagre dem som SVG eller G-code.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: tegnebord. Kontrollpanel til venstre, papirark på skjærematte til høyre; stables på mobil. */
+:root {
+  --bg: #e8ebe5;
+  --panel: #f7f8f5;
+  --well: #ffffff;
+  --fg: #1c2226;
+  --muted: #5c6660;
+  --line: #d2d7cf;
+  --accent: #2443c9;
+  --accent-fg: #ffffff;
+  --accent-soft: #dfe5fb;
+  --mat: #2f4a3e;
+  --mat-line: rgba(255,255,255,.07);
+  --sheet: #ffffff;
+  --travel: #e0413a;
+  --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131719; --panel: #1b2023; --well: #12161a; --fg: #e5e9e3; --muted: #97a19a;
+    --line: #2e353a; --accent: #8196ff; --accent-fg: #0e1430; --accent-soft: #232b4d;
+    --mat: #1d2d27; --mat-line: rgba(255,255,255,.05); --sheet: #fbfbf8; --travel: #ff6a62;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #131719; --panel: #1b2023; --well: #12161a; --fg: #e5e9e3; --muted: #97a19a;
+  --line: #2e353a; --accent: #8196ff; --accent-fg: #0e1430; --accent-soft: #232b4d;
+  --mat: #1d2d27; --mat-line: rgba(255,255,255,.05); --sheet: #fbfbf8; --travel: #ff6a62;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 14px/1.45 var(--body);
+}
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.app {
+  display: grid; grid-template-columns: minmax(300px, 360px) 1fr; height: 100%;
+}
+.side {
+  background: var(--panel); border-right: 1px solid var(--line);
+  overflow-y: auto; min-width: 0;
+  padding-block: 18px 28px;
+  padding-left: max(18px, env(safe-area-inset-left, 0px)); padding-right: 18px;
+  display: flex; flex-direction: column; gap: 18px;
+}
+.brand { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.brand h1 { font: 800 28px/1 var(--display); letter-spacing: -.02em; margin: 0; }
+.brand p { margin: 0; color: var(--muted); font-size: 13px; }
+
+.src { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.btn {
+  border: 1px solid var(--line); background: var(--well); border-radius: 6px;
+  padding: 9px 12px; cursor: pointer; font-weight: 500; text-align: center;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px;
+}
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.wide { grid-column: 1 / -1; }
+.demos { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip {
+  border: 1px solid var(--line); background: transparent; border-radius: 999px;
+  padding: 4px 11px; cursor: pointer; font-size: 12.5px;
+}
+.chip:hover { border-color: var(--accent); }
+.chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+
+.styles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.style-btn {
+  border: 1px solid var(--line); background: var(--well); border-radius: 6px; cursor: pointer;
+  padding: 6px 4px 7px; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 12px;
+}
+.style-btn canvas { width: 100%; height: 38px; display: block; }
+.style-btn[data-style="lineart"] { grid-column: 1 / -1; }
+.style-btn[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+
+details.sec { border-top: 1px solid var(--line); padding-top: 12px; }
+details.sec > summary {
+  list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center;
+  font: 600 11px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+}
+details.sec > summary::-webkit-details-marker { display: none; }
+details.sec > summary::after { content: "+"; font-size: 15px; }
+details.sec[open] > summary::after { content: "–"; }
+.ctrls { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.ctrl { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; }
+.ctrl label { font-size: 13px; }
+.ctrl output { font: 12px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.ctrl input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); margin: 2px 0 0; }
+.ctrl select, .ctrl input[type=text], .ctrl input[type=number] {
+  grid-column: 1 / -1; width: 100%; border: 1px solid var(--line); background: var(--well);
+  border-radius: 6px; padding: 7px 8px; min-height: 36px;
+}
+.ctrl.check { grid-template-columns: auto 1fr; }
+.ctrl.check input { width: 18px; height: 18px; accent-color: var(--accent); margin: 0; }
+.ctrl.color input[type=color] { width: 44px; height: 28px; border: 1px solid var(--line); border-radius: 4px; padding: 0; background: none; }
+.hint { font-size: 12px; color: var(--muted); margin: 0; }
+
+.stage-wrap { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.toolbar {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  padding-block: 10px; padding-left: 16px; padding-right: max(16px, env(safe-area-inset-right, 0px));
+  border-bottom: 1px solid var(--line); background: var(--panel);
+}
+.toolbar .spacer { flex: 1; }
+.stats { display: flex; gap: 14px; flex-wrap: wrap; font: 12px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.stats b { color: var(--fg); font-weight: 600; }
+.stage {
+  position: relative; flex: 1; min-height: 0;
+  background-color: var(--mat);
+  background-image:
+    linear-gradient(var(--mat-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--mat-line) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.busy {
+  position: absolute; right: max(14px, env(safe-area-inset-right, 0px)); bottom: 14px;
+  font: 12px var(--mono); background: var(--panel); color: var(--fg); border: 1px solid var(--line);
+  padding: 5px 10px; border-radius: 999px;
+}
+.drop {
+  position: absolute; inset: 12px; border: 2px dashed var(--accent); border-radius: 10px;
+  display: grid; place-items: center; font: 600 18px var(--display); color: #fff; background: rgba(36,67,201,.25);
+}
+.export { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.toast {
+  position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+  background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 6px; font-size: 13px; z-index: 20;
+}
+textarea.fallback { width: 100%; height: 120px; font: 11px var(--mono); border: 1px solid var(--line); border-radius: 6px; background: var(--well); }
+
+@media (max-width: 820px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: auto auto; height: auto; }
+  .stage-wrap { order: -1; }
+  .stage { flex: none; height: min(118vw, 74vh); }
+  .side { border-right: 0; overflow: visible; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <h1>Strekverk</h1>
+      <p>bilde → plotterstreker</p>
+    </div>
+
+    <div class="src">
+      <label class="btn primary" for="file">Velg bilde…</label>
+      <input id="file" type="file" accept="image/*,.svg" hidden>
+      <button class="btn" id="reset" type="button">Nullstill innstillinger</button>
+      <div class="demos wide" style="grid-column:1/-1" id="demos" aria-label="Eksempelbilder"></div>
+      <p class="hint" style="grid-column:1/-1">Slipp et bilde hvor som helst, eller lim inn (Ctrl+V). Bildet forlater aldri maskinen din. Slipp en SVG fra Code Painter for å plotte maleriet hans strøk for strøk, eller en SVG fra Strekverk for å hente innstillingene tilbake.</p>
+    </div>
+
+    <div>
+      <div class="styles" id="styles" role="group" aria-label="Strekstil"></div>
+    </div>
+
+    <div id="sections"></div>
+
+    <details class="sec" open>
+      <summary>Lagre</summary>
+      <div class="ctrls">
+        <div class="export">
+          <button class="btn primary" id="dl-svg" type="button">SVG</button>
+          <button class="btn" id="dl-layers" type="button">SVG per penn</button>
+          <button class="btn" id="dl-gcode" type="button">G-code</button>
+          <button class="btn" id="copy-svg" type="button">Kopier SVG</button>
+        </div>
+        <p class="hint">SVG-en er i millimeter med ett Inkscape-lag per penn, klar for AxiDraw, iDraw, NextDraw og vpype. G-code er for GRBL-baserte plottere med servo; tilpass kommandoene under «G-code».</p>
+        <div id="fallback" hidden>
+          <p class="hint">Nedlasting er blokkert her. Marker teksten og kopier den:</p>
+          <textarea class="fallback" id="fallback-text" readonly></textarea>
+        </div>
+      </div>
+    </details>
+  </aside>
+
+  <main class="stage-wrap">
+    <div class="toolbar">
+      <button class="btn" id="play" type="button" aria-pressed="false">▶ Simuler plotting</button>
+      <div class="spacer"></div>
+      <div class="stats" id="stats" aria-live="polite"></div>
+    </div>
+    <div class="stage" id="stage">
+      <canvas id="view"></canvas>
+      <div class="busy" id="busy" hidden>beregner…</div>
+      <div class="drop" id="drop" hidden>Slipp bildet her</div>
+    </div>
+  </main>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+"use strict";
+/* =====================================================================
+   Strekverk – bilde til plotterstreker.
+   Alle mål i millimeter. Hvert lag = én penn. Hver sti = én pennned-strek.
+   ===================================================================== */
+
+const $ = (id) => document.getElementById(id);
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+
+/* ---------- Innstillinger ---------- */
+const PAPERS = {
+  A6: [105, 148], A5: [148, 210], A4: [210, 297], A3: [297, 420], A2: [420, 594],
+  Letter: [215.9, 279.4], "Kvadrat 20 cm": [200, 200], "Kvadrat 30 cm": [300, 300], Egendefinert: null,
+};
+const STYLES = {
+  hatch:   "Skravur",
+  waves:   "Bølger",
+  spiral:  "Spiral",
+  contour: "Koter",
+  stipple: "Prikker",
+  tsp:     "Én linje",
+  growth:  "Vekst",
+  string:  "Trådkunst",
+  codepainter: "Code Painter",
+  lineart: "Strektegning (AI)",
+};
+const isS = (...s) => (c) => s.includes(c.style);
+
+const SCHEMA = [
+  { sec: "Bilde", open: false, items: [
+    { id: "brightness", label: "Lysstyrke", type: "range", min: -0.5, max: 0.5, step: 0.01, def: 0 },
+    { id: "contrast", label: "Kontrast", type: "range", min: 0.5, max: 3, step: 0.05, def: 1.3 },
+    { id: "gamma", label: "Gamma", type: "range", min: 0.4, max: 2.5, step: 0.05, def: 1 },
+    { id: "blur", label: "Utjevning", type: "range", min: 0, max: 6, step: 1, def: 1 },
+    { id: "invert", label: "Inverter (for lys penn på mørkt papir)", type: "check", def: false },
+  ]},
+  { sec: "Strek", open: true, items: [
+    { id: "spacing", label: "Linjeavstand", unit: "mm", type: "range", min: 0.3, max: 5, step: 0.05, def: 1.0, show: (c) => ["hatch", "waves", "spiral"].includes(c.style) || (c.style === "lineart" && ["hatch", "both"].includes(c.laFill)) },
+    { id: "angle", label: "Vinkel", unit: "°", type: "range", min: 0, max: 180, step: 1, def: 45, show: (c) => ["hatch", "waves"].includes(c.style) || (c.style === "codepainter" && c.cpFill === "brush") || (c.style === "lineart" && ["hatch", "both"].includes(c.laFill)) },
+    { id: "layers", label: "Skravurlag", type: "range", min: 1, max: 4, step: 1, def: 3, show: isS("hatch") },
+    { id: "amp", label: "Utslag", type: "range", min: 0, max: 1.5, step: 0.05, def: 0.9, show: isS("waves", "spiral") },
+    { id: "freq", label: "Bølgetetthet", unit: "/mm", type: "range", min: 0.1, max: 4, step: 0.05, def: 1.2, show: isS("waves", "spiral") },
+    { id: "lightCut", label: "Løft pennen i lyse partier", type: "range", min: 0, max: 0.5, step: 0.01, def: 0.04, show: isS("waves", "spiral") },
+    { id: "levels", label: "Antall koter", type: "range", min: 2, max: 40, step: 1, def: 14, show: isS("contour") },
+    { id: "cSmooth", label: "Glatting av koter", type: "range", min: 0, max: 8, step: 1, def: 2, show: isS("contour") },
+    { id: "points", label: "Antall punkter", type: "range", min: 200, max: 20000, step: 100, def: 5000, show: isS("stipple", "tsp") },
+    { id: "dotR", label: "Prikkradius", unit: "mm", type: "range", min: 0.1, max: 2, step: 0.05, def: 0.35, show: isS("stipple") },
+    { id: "tspTime", label: "Tid til linjeoptimalisering", unit: "s", type: "range", min: 0.2, max: 5, step: 0.1, def: 1.5, show: isS("tsp") },
+    { id: "growMin", label: "Tetteste avstand (mørkt)", unit: "mm", type: "range", min: 0.3, max: 5, step: 0.05, def: 1.0, show: isS("growth") },
+    { id: "growMax", label: "Løseste avstand (lyst)", unit: "mm", type: "range", min: 1, max: 20, step: 0.5, def: 6, show: isS("growth") },
+    { id: "growPoints", label: "Maks punkter", type: "range", min: 2000, max: 80000, step: 1000, def: 25000, show: isS("growth") },
+    { id: "growTime", label: "Maks veksttid", unit: "s", type: "range", min: 2, max: 90, step: 1, def: 15, show: isS("growth") },
+    { id: "saFrame", label: "Ramme", type: "select", def: "circle", options: { circle: "Sirkel", rect: "Rektangel (hele bildet)" }, show: isS("string") },
+    { id: "saPins", label: "Spiker", type: "range", min: 60, max: 600, step: 4, def: 240, show: isS("string") },
+    { id: "saLines", label: "Maks tråder", type: "range", min: 200, max: 12000, step: 100, def: 4000, show: isS("string") },
+    { id: "saWeight", label: "Hvor mye hver tråd teller", type: "range", min: 0.2, max: 3, step: 0.05, def: 1, show: isS("string") },
+    { id: "laSource", label: "Kilde", type: "select", def: "ai", options: { ai: "AI tegner streker av bildet", direct: "Bildet er allerede en strektegning" }, show: isS("lineart") },
+    { id: "laModel", label: "AI-stil", type: "select", def: "opensketch", options: { opensketch: "Skisse (mange lette streker)", contour: "Konturer (kraftige linjer)", anime: "Fine linjer" }, show: (c) => c.style === "lineart" && c.laSource === "ai" },
+    { id: "laRes", label: "Oppløsning for AI-en", type: "select", def: "768", options: { "512": "512 px (raskest)", "768": "768 px", "1024": "1024 px (mest detaljer)" }, show: (c) => c.style === "lineart" && c.laSource === "ai" },
+    { id: "laThr", label: "Hva som regnes som strek (høyere = flere lyse streker)", type: "range", min: 0.1, max: 0.95, step: 0.01, def: 0.7, show: isS("lineart") },
+    { id: "laSmooth", label: "Bind sammen brutte streker", type: "range", min: 0, max: 3, step: 1, def: 1, show: isS("lineart") },
+    { id: "laFill", label: "Tykke svarte partier", type: "select", def: "both", options: { both: "Skraver og tegn kontur", hatch: "Bare skraver", outline: "Bare kontur", skeleton: "Behandle alt som streker (midtlinje)" }, show: isS("lineart") },
+    { id: "laFat", label: "Streker tykkere enn dette regnes som flate", unit: "mm", type: "range", min: 0.3, max: 6, step: 0.1, def: 2, show: (c) => c.style === "lineart" && c.laFill !== "skeleton" },
+    { id: "cpSource", label: "Kilde", type: "select", def: "auto", options: { auto: "Mal bildet med penselstrøk", file: "SVG lagret fra Code Painter" }, show: isS("codepainter") },
+    { id: "cpBrush", label: "Største pensel", unit: "mm", type: "range", min: 2, max: 30, step: 0.5, def: 10, show: (c) => c.style === "codepainter" && c.cpSource === "auto" },
+    { id: "cpDetail", label: "Detaljer", type: "range", min: 0, max: 1, step: 0.05, def: 0.6, show: (c) => c.style === "codepainter" && c.cpSource === "auto" },
+    { id: "cpFill", label: "Hvordan formene tegnes", type: "select", def: "brush", options: { brush: "Fylt: strøk som busthår, flater skravert", center: "Midtlinjer og konturer", outline: "Bare konturer" }, show: isS("codepainter") },
+    { id: "cpSpacing", label: "Avstand i fyllet", unit: "mm", type: "range", min: 0.2, max: 4, step: 0.05, def: 0.7, show: (c) => c.style === "codepainter" && c.cpFill === "brush" },
+    { id: "cpTone", label: "Lyse farger får glissere fyll", type: "check", def: true, show: (c) => c.style === "codepainter" && c.cpFill === "brush" },
+    { id: "cpOutline", label: "Kontur rundt flater også", type: "check", def: false, show: (c) => c.style === "codepainter" && c.cpFill === "brush" },
+    { id: "cpPens", label: "Penner (farger hentet fra maleriet)", type: "range", min: 1, max: 8, step: 1, def: 1, show: isS("codepainter") },
+    { id: "cpMinAlpha", label: "Hopp over gjennomsiktige strøk under", type: "range", min: 0, max: 1, step: 0.05, def: 0.3, show: isS("codepainter") },
+    { id: "cpHide", label: "Skjul det som er malt over", type: "check", def: true, show: isS("codepainter") },
+    { id: "cpBg", label: "Tegn bakgrunnsfargen også", type: "check", def: false, show: isS("codepainter") },
+    { id: "saPinsDraw", label: "Tegn spikerne som små ringer", type: "check", def: false, show: isS("string") },
+  ]},
+  { sec: "Penn og farge", open: true, items: [
+    { id: "penWidth", label: "Pennebredde", unit: "mm", type: "range", min: 0.05, max: 1.5, step: 0.05, def: 0.3 },
+    { id: "colorMode", label: "Penner", type: "select", def: "mono", options: { mono: "Én penn", cmyk: "Fire penner (CMYK)", duo: "To penner (mørk + mellomtone)" }, show: (c) => c.style !== "codepainter" && c.style !== "lineart" },
+    { id: "penColor", label: "Pennefarge", type: "color", def: "#1b2036", show: (c) => c.style === "codepainter" ? c.cpPens === 1 : c.style === "lineart" || c.colorMode !== "cmyk" },
+    { id: "penColor2", label: "Penn 2 (mellomtone)", type: "color", def: "#2f6fd0", show: (c) => c.colorMode === "duo" && c.style !== "codepainter" && c.style !== "lineart" },
+    { id: "speed", label: "Tegnefart (for tidsestimat)", unit: "mm/s", type: "range", min: 10, max: 200, step: 5, def: 40 },
+  ]},
+  { sec: "Papir", open: false, items: [
+    { id: "paper", label: "Format", type: "select", def: "A4", options: Object.fromEntries(Object.keys(PAPERS).map(k => [k, k])) },
+    { id: "orient", label: "Retning", type: "select", def: "auto", options: { auto: "Følg bildet", portrait: "Stående", landscape: "Liggende" } },
+    { id: "customW", label: "Bredde", unit: "mm", type: "number", def: 250, show: (c) => c.paper === "Egendefinert" },
+    { id: "customH", label: "Høyde", unit: "mm", type: "number", def: 250, show: (c) => c.paper === "Egendefinert" },
+    { id: "margin", label: "Marg", unit: "mm", type: "range", min: 0, max: 60, step: 1, def: 15 },
+  ]},
+  { sec: "Optimalisering", open: false, items: [
+    { id: "simplify", label: "Forenkling (toleranse)", unit: "mm", type: "range", min: 0, max: 0.5, step: 0.01, def: 0.05 },
+    { id: "minLen", label: "Fjern streker kortere enn", unit: "mm", type: "range", min: 0, max: 5, step: 0.1, def: 0.4 },
+    { id: "joinTol", label: "Skjøt streker nærmere enn", unit: "mm", type: "range", min: 0, max: 2, step: 0.05, def: 0.3 },
+    { id: "sort", label: "Sorter streker (kortere pennløft)", type: "check", def: true },
+  ]},
+  { sec: "Visning", open: false, items: [
+    { id: "showImage", label: "Vis bildet svakt under", type: "check", def: false },
+    { id: "showTravel", label: "Vis pennløft (rød stiplet)", type: "check", def: false },
+    { id: "animSpeed", label: "Simuleringsfart", unit: "×", type: "range", min: 1, max: 200, step: 1, def: 30 },
+  ]},
+  { sec: "G-code", open: false, items: [
+    { id: "gcDown", label: "Penn ned", type: "text", def: "M3 S90" },
+    { id: "gcUp", label: "Penn opp", type: "text", def: "M5" },
+    { id: "gcDwell", label: "Pause etter løft/senk", unit: "s", type: "range", min: 0, max: 1, step: 0.05, def: 0.15 },
+    { id: "gcFeed", label: "Tegnehastighet", unit: "mm/min", type: "number", def: 2500 },
+    { id: "gcTravel", label: "Flyttehastighet", unit: "mm/min", type: "number", def: 6000 },
+    { id: "gcFlipY", label: "Origo nede til venstre (snu Y)", type: "check", def: true },
+  ]},
+];
+const ALL = SCHEMA.flatMap(s => s.items);
+const DEFAULTS = Object.fromEntries([["style", "hatch"], ...ALL.map(i => [i.id, i.def])]);
+let cfg = { ...DEFAULTS };
+try { const s = JSON.parse(localStorage.getItem("strekverk.cfg") || "null"); if (s) cfg = { ...DEFAULTS, ...s }; } catch (e) {}
+if (cfg.cpSource === "file") cfg.cpSource = "auto"; // SVG-en lagres ikke mellom besøk
+const saveCfg = () => { try { localStorage.setItem("strekverk.cfg", JSON.stringify(cfg)); } catch (e) {} };
+
+/* ---------- UI-bygging ---------- */
+function decimals(step) { const s = String(step); return s.includes(".") ? s.split(".")[1].length : 0; }
+function fmtVal(item, v) { return (item.type === "range" ? Number(v).toFixed(decimals(item.step)) : v) + (item.unit ? " " + item.unit : ""); }
+
+function buildControls() {
+  const host = $("sections");
+  host.innerHTML = "";
+  for (const sec of SCHEMA) {
+    const d = document.createElement("details");
+    d.className = "sec"; d.open = sec.open;
+    d.innerHTML = `<summary>${sec.sec}</summary><div class="ctrls"></div>`;
+    const box = d.querySelector(".ctrls");
+    for (const it of sec.items) {
+      const row = document.createElement("div");
+      row.className = "ctrl" + (it.type === "check" ? " check" : "") + (it.type === "color" ? " color" : "");
+      row.dataset.id = it.id;
+      const id = "c-" + it.id;
+      if (it.type === "range") {
+        row.innerHTML = `<label for="${id}">${it.label}</label><output id="${id}-o"></output><input id="${id}" type="range" min="${it.min}" max="${it.max}" step="${it.step}">`;
+      } else if (it.type === "check") {
+        row.innerHTML = `<input id="${id}" type="checkbox"><label for="${id}">${it.label}</label>`;
+      } else if (it.type === "select") {
+        row.innerHTML = `<label for="${id}">${it.label}</label><span></span><select id="${id}">${Object.entries(it.options).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select>`;
+      } else if (it.type === "color") {
+        row.innerHTML = `<label for="${id}">${it.label}</label><input id="${id}" type="color">`;
+      } else {
+        row.innerHTML = `<label for="${id}">${it.label}${it.unit ? " (" + it.unit + ")" : ""}</label><span></span><input id="${id}" type="${it.type}">`;
+      }
+      box.appendChild(row);
+      const inp = row.querySelector("input,select");
+      const onChange = () => {
+        let v = it.type === "check" ? inp.checked : inp.value;
+        if (it.type === "range" || it.type === "number") v = Number(v);
+        cfg[it.id] = v;
+        syncUI();
+        saveCfg();
+        if (it.id === "cpSource" && v === "file" && !cpDoc) { toast("Velg SVG-filen du lagret fra Code Painter («save svg»)."); $("file").click(); }
+        if (["showImage", "showTravel", "animSpeed"].includes(it.id)) draw(); else schedule(it.id);
+      };
+      inp.addEventListener(it.type === "range" || it.type === "text" ? "input" : "change", onChange);
+    }
+    host.appendChild(d);
+  }
+}
+
+function syncUI() {
+  for (const it of ALL) {
+    const inp = $("c-" + it.id);
+    if (it.type === "check") inp.checked = !!cfg[it.id];
+    else if (document.activeElement !== inp || it.type === "range") inp.value = cfg[it.id];
+    if (it.type === "range") $("c-" + it.id + "-o").textContent = fmtVal(it, cfg[it.id]);
+    inp.closest(".ctrl").hidden = it.show ? !it.show(cfg) : false;
+  }
+  for (const b of document.querySelectorAll(".style-btn")) b.setAttribute("aria-pressed", String(b.dataset.style === cfg.style));
+}
+
+/* ---------- Bilde inn ---------- */
+const GRID = 520; // lengste side i rutenettet
+let img = null;   // { w, h, r, g, b (Float32Array 0..1), canvas }
+
+function loadBitmapSource(src, label) {
+  const w0 = src.width, h0 = src.height;
+  const k = GRID / Math.max(w0, h0);
+  const w = Math.max(2, Math.round(w0 * k)), h = Math.max(2, Math.round(h0 * k));
+  const c = document.createElement("canvas"); c.width = w; c.height = h;
+  const x = c.getContext("2d", { willReadFrequently: true });
+  x.fillStyle = "#fff"; x.fillRect(0, 0, w, h);
+  x.drawImage(src, 0, 0, w, h);
+  const d = x.getImageData(0, 0, w, h).data;
+  const n = w * h, r = new Float32Array(n), g = new Float32Array(n), b = new Float32Array(n);
+  for (let i = 0; i < n; i++) { r[i] = d[i * 4] / 255; g[i] = d[i * 4 + 1] / 255; b[i] = d[i * 4 + 2] / 255; }
+  // forhåndsvisning i høyere oppløsning
+  const pk = Math.min(1, 1400 / Math.max(w0, h0));
+  const pc = document.createElement("canvas"); pc.width = Math.round(w0 * pk); pc.height = Math.round(h0 * pk);
+  pc.getContext("2d").drawImage(src, 0, 0, pc.width, pc.height);
+  img = { w, h, r, g, b, canvas: pc, label };
+  schedule("image");
+}
+
+async function loadFile(file) {
+  if (!file) return;
+  if (file.type === "image/svg+xml" || /\.svg$/i.test(file.name)) {
+    const text = await file.text();
+    const m = text.match(/<strekverk-settings>([\s\S]*?)<\/strekverk-settings>/);
+    if (m) {
+      try { cfg = { ...DEFAULTS, ...JSON.parse(m[1].replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&")) }; syncUI(); saveCfg(); schedule("load"); toast("Innstillingene er hentet fra SVG-en"); return; }
+      catch (e) {}
+    }
+    if (await loadCodePainterSVG(text, file.name)) return;
+  }
+  try {
+    const url = URL.createObjectURL(file);
+    const im = new Image();
+    im.onload = () => { cfg.cpSource = "auto"; syncUI(); loadBitmapSource(im, file.name); URL.revokeObjectURL(url); for (const c of document.querySelectorAll("#demos .chip")) c.setAttribute("aria-pressed", "false"); };
+    im.onerror = () => toast("Klarte ikke å lese bildet. Prøv JPG eller PNG.");
+    im.src = url;
+  } catch (e) { toast("Klarte ikke å lese bildet."); }
+}
+
+/* Innebygde eksempelbilder, tegnet med kode */
+const DEMOS = {
+  "Kuler": (x, W, H) => {
+    const bg = x.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, "#f4f1ea"); bg.addColorStop(1, "#c9c4b8");
+    x.fillStyle = bg; x.fillRect(0, 0, W, H);
+    const ball = (cx, cy, r, col, dark) => {
+      x.fillStyle = "rgba(0,0,0,.35)"; x.beginPath(); x.ellipse(cx + r * .35, cy + r * .95, r * 1.05, r * .28, 0, 0, 7); x.fill();
+      const g = x.createRadialGradient(cx - r * .4, cy - r * .45, r * .05, cx, cy, r);
+      g.addColorStop(0, "#fff"); g.addColorStop(.25, col); g.addColorStop(1, dark);
+      x.fillStyle = g; x.beginPath(); x.arc(cx, cy, r, 0, 7); x.fill();
+    };
+    ball(W * .34, H * .5, W * .22, "#e0453a", "#3a0806");
+    ball(W * .7, H * .4, W * .16, "#2f6fd0", "#06173a");
+    ball(W * .66, H * .73, W * .1, "#f2c230", "#4a3300");
+  },
+  "Fjell": (x, W, H) => {
+    const sky = x.createLinearGradient(0, 0, 0, H * .7); sky.addColorStop(0, "#9fb8d6"); sky.addColorStop(1, "#f6efe2");
+    x.fillStyle = sky; x.fillRect(0, 0, W, H);
+    x.fillStyle = "#fff7da"; x.beginPath(); x.arc(W * .72, H * .26, W * .08, 0, 7); x.fill();
+    const ridge = (base, amp, seed, col) => {
+      x.fillStyle = col; x.beginPath(); x.moveTo(0, H);
+      for (let i = 0; i <= 200; i++) {
+        const t = i / 200, y = base - amp * (0.5 * Math.sin(t * 7 + seed) + 0.3 * Math.sin(t * 17 + seed * 2) + 0.2 * Math.sin(t * 41 + seed * 3));
+        x.lineTo(t * W, y);
+      }
+      x.lineTo(W, H); x.fill();
+    };
+    ridge(H * .55, H * .16, 1, "#7d8ea8"); ridge(H * .68, H * .12, 4, "#4c5d74"); ridge(H * .82, H * .08, 9, "#22303f");
+  },
+  "Tekst": (x, W, H) => {
+    x.fillStyle = "#fff"; x.fillRect(0, 0, W, H);
+    const g = x.createRadialGradient(W * .5, H * .5, 0, W * .5, H * .5, W * .7);
+    g.addColorStop(0, "#111"); g.addColorStop(1, "#8a8a8a");
+    x.fillStyle = g; x.font = `800 ${Math.round(H * .34)}px "Bricolage Grotesque", system-ui, sans-serif`;
+    x.textAlign = "center"; x.textBaseline = "middle"; x.fillText("PLOT", W / 2, H * .52);
+  },
+  "Gradient": (x, W, H) => {
+    const g = x.createLinearGradient(0, 0, W, 0); g.addColorStop(0, "#fff"); g.addColorStop(1, "#000");
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+  },
+};
+function loadDemo(name) {
+  const c = document.createElement("canvas"); c.width = 1000; c.height = name === "Tekst" || name === "Gradient" ? 640 : 1000;
+  DEMOS[name](c.getContext("2d"), c.width, c.height);
+  if (cfg.cpSource === "file") { cfg.cpSource = "auto"; syncUI(); }
+  loadBitmapSource(c, name);
+  for (const ch of document.querySelectorAll("#demos .chip")) ch.setAttribute("aria-pressed", String(ch.dataset.demo === name));
+}
+
+/* ---------- Tonekart: et mørkhetsfelt (0 = papir, 1 = full blekk) per penn ---------- */
+function boxBlur(a, w, h, r) {
+  if (r <= 0) return a;
+  const t = new Float32Array(a.length), o = new Float32Array(a.length);
+  for (let y = 0; y < h; y++) { // horisontalt
+    let s = 0; const row = y * w;
+    for (let x = -r; x <= r; x++) s += a[row + clamp(x, 0, w - 1)];
+    for (let x = 0; x < w; x++) {
+      t[row + x] = s / (2 * r + 1);
+      s += a[row + clamp(x + r + 1, 0, w - 1)] - a[row + clamp(x - r, 0, w - 1)];
+    }
+  }
+  for (let x = 0; x < w; x++) { // vertikalt
+    let s = 0;
+    for (let y = -r; y <= r; y++) s += t[clamp(y, 0, h - 1) * w + x];
+    for (let y = 0; y < h; y++) {
+      o[y * w + x] = s / (2 * r + 1);
+      s += t[clamp(y + r + 1, 0, h - 1) * w + x] - t[clamp(y - r, 0, h - 1) * w + x];
+    }
+  }
+  return o;
+}
+
+function channelField(ch) {
+  const { w, h, r, g, b } = img, n = w * h, out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let v;
+    if (ch === "k" || ch === "luma") v = 1 - (0.2126 * r[i] + 0.7152 * g[i] + 0.0722 * b[i]);
+    else {
+      const C = 1 - r[i], M = 1 - g[i], Y = 1 - b[i], K = Math.min(C, M, Y), d = 1 - K + 1e-6;
+      v = ch === "c" ? (C - K) / d : ch === "m" ? (M - K) / d : ch === "y" ? (Y - K) / d : K;
+    }
+    if (cfg.invert) v = 1 - v;
+    v = clamp((v - 0.5) * cfg.contrast + 0.5 - cfg.brightness, 0, 1);
+    out[i] = Math.pow(v, cfg.gamma);
+  }
+  return boxBlur(out, w, h, cfg.blur);
+}
+
+/* ---------- Geometri ---------- */
+function layout() {
+  let pw, ph;
+  if (cfg.paper === "Egendefinert") { pw = Math.max(20, +cfg.customW || 200); ph = Math.max(20, +cfg.customH || 200); }
+  else [pw, ph] = PAPERS[cfg.paper] || PAPERS.A4;
+  const imgLandscape = img && img.w > img.h;
+  const wantLand = cfg.orient === "landscape" || (cfg.orient === "auto" && imgLandscape);
+  if (wantLand !== (pw > ph) && pw !== ph) [pw, ph] = [ph, pw];
+  const m = Math.min(cfg.margin, pw / 2 - 5, ph / 2 - 5);
+  const aw = pw - 2 * m, ah = ph - 2 * m;
+  const ar = img ? img.w / img.h : 1;
+  let iw = aw, ih = aw / ar;
+  if (ih > ah) { ih = ah; iw = ah * ar; }
+  return { pw, ph, ix: (pw - iw) / 2, iy: (ph - ih) / 2, iw, ih };
+}
+
+function makeSampler(field, L) {
+  const { w, h } = img;
+  const sx = (w - 1) / L.iw, sy = (h - 1) / L.ih;
+  return (x, y) => {
+    const gx = (x - L.ix) * sx, gy = (y - L.iy) * sy;
+    if (gx < 0 || gy < 0 || gx > w - 1 || gy > h - 1) return 0;
+    const x0 = gx | 0, y0 = gy | 0, x1 = Math.min(x0 + 1, w - 1), y1 = Math.min(y0 + 1, h - 1);
+    const fx = gx - x0, fy = gy - y0;
+    const a = field[y0 * w + x0], b = field[y0 * w + x1], c = field[y1 * w + x0], d = field[y1 * w + x1];
+    return (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + d * fx) * fy;
+  };
+}
+
+// Samler punkter i sammenhengende løp; bryter når pennen skal løftes.
+class Runs {
+  constructor() { this.out = []; this.cur = null; }
+  add(x, y) { (this.cur || (this.cur = [])).push(x, y); }
+  lift() { if (this.cur && this.cur.length >= 4) this.out.push(this.cur); this.cur = null; }
+}
+
+const inside = (L, x, y) => x >= L.ix && x <= L.ix + L.iw && y >= L.iy && y <= L.iy + L.ih;
+
+// Parallelle linjer over bildet. rowFn får (runs, punkt-generator)
+function scanLines(L, angleDeg, spacing, step, perPoint) {
+  const a = angleDeg * Math.PI / 180, ux = Math.cos(a), uy = Math.sin(a), nx = -uy, ny = ux;
+  const cx = L.ix + L.iw / 2, cy = L.iy + L.ih / 2, R = Math.hypot(L.iw, L.ih) / 2 + spacing;
+  const runs = new Runs();
+  const nRows = Math.ceil(R / spacing);
+  let row = 0;
+  for (let k = -nRows; k <= nRows; k++, row++) {
+    const d = k * spacing, dir = row % 2 ? -1 : 1;
+    const steps = Math.ceil(2 * R / step);
+    for (let s = 0; s <= steps; s++) {
+      const t = dir * (-R + s * step);
+      const bx = cx + nx * d + ux * t, by = cy + ny * d + uy * t;
+      perPoint(runs, bx, by, nx, ny, step);
+    }
+    runs.lift();
+  }
+  return runs.out;
+}
+
+/* ---------- Stiler ---------- */
+function genHatch(S, L, layerIdx, nLayersTotal) {
+  const n = cfg.layers, offs = [0, 90, 45, 135], paths = [];
+  const base = cfg.angle + (layerIdx || 0) * 15;
+  for (let i = 0; i < n; i++) {
+    const thr = (i + 0.5) / (n + 0.5) * 0.9 + 0.04;
+    const ps = scanLines(L, base + offs[i], cfg.spacing, Math.min(0.4, cfg.spacing / 2), (runs, x, y) => {
+      if (inside(L, x, y) && S(x, y) > thr) runs.add(x, y); else runs.lift();
+    });
+    for (const p of ps) paths.push(p);
+  }
+  return paths;
+}
+
+function genWaves(S, L, layerIdx) {
+  const s = cfg.spacing, amp = cfg.amp * s * 0.5, f = cfg.freq * 2 * Math.PI, cut = cfg.lightCut;
+  const angle = cfg.angle + (layerIdx || 0) * 30;
+  let phase = 0;
+  return scanLines(L, angle, s, 0.2, (runs, x, y, nx, ny, step) => {
+    if (!inside(L, x, y)) { runs.lift(); return; }
+    const d = S(x, y);
+    if (cut > 0 && d < cut) { runs.lift(); return; }
+    phase += f * step * (0.15 + d);
+    const o = amp * d * Math.sin(phase);
+    runs.add(x + nx * o, y + ny * o);
+  });
+}
+
+function genSpiral(S, L, layerIdx) {
+  const s = cfg.spacing, amp = cfg.amp * s * 0.5, f = cfg.freq * 2 * Math.PI, cut = cfg.lightCut;
+  const cx = L.ix + L.iw / 2, cy = L.iy + L.ih / 2, R = Math.hypot(L.iw, L.ih) / 2;
+  const rot = (layerIdx || 0) * 1.7;
+  const runs = new Runs();
+  let th = 0, phase = 0;
+  const step = 0.2;
+  while (true) {
+    const r = s * th / (2 * Math.PI);
+    if (r > R) break;
+    const ca = Math.cos(th + rot), sa = Math.sin(th + rot);
+    const bx = cx + r * ca, by = cy + r * sa;
+    th += step / Math.max(r, s);
+    if (!inside(L, bx, by)) { runs.lift(); continue; }
+    const d = S(bx, by);
+    if (cut > 0 && d < cut) { runs.lift(); continue; }
+    phase += f * step * (0.15 + d);
+    const o = amp * d * Math.sin(phase);
+    runs.add(bx + ca * o, by + sa * o);
+  }
+  runs.lift();
+  return runs.out;
+}
+
+// Marching squares med kjeding til sammenhengende kurver
+const MS = [[], [[3, 0]], [[0, 1]], [[3, 1]], [[1, 2]], [[3, 0], [1, 2]], [[0, 2]], [[3, 2]],
+            [[2, 3]], [[0, 2]], [[0, 1], [2, 3]], [[1, 2]], [[3, 1]], [[0, 1]], [[3, 0]], []];
+function genContour(field0, L) {
+  const { w, h } = img;
+  const field = boxBlur(field0, w, h, cfg.cSmooth);
+  const W = w + 2, H = h + 2;
+  const val = (i, j) => (i < 1 || j < 1 || i > w || j > h) ? 0 : field[(j - 1) * w + (i - 1)];
+  const sx = L.iw / (w - 1), sy = L.ih / (h - 1);
+  const X = (i) => clamp(L.ix + (i - 1) * sx, L.ix, L.ix + L.iw), Y = (j) => clamp(L.iy + (j - 1) * sy, L.iy, L.iy + L.ih);
+  const paths = [];
+  for (let k = 0; k < cfg.levels; k++) {
+    const lv = (k + 0.5) / cfg.levels;
+    const ea = [], eb = [], adj = new Map();
+    const edgeKey = (i, j, e) => e === 0 ? (j * W + i) * 2 : e === 1 ? (j * W + i + 1) * 2 + 1 : e === 2 ? ((j + 1) * W + i) * 2 : (j * W + i) * 2 + 1;
+    for (let j = 0; j < H - 1; j++) for (let i = 0; i < W - 1; i++) {
+      const c = (val(i, j) >= lv ? 1 : 0) | (val(i + 1, j) >= lv ? 2 : 0) | (val(i + 1, j + 1) >= lv ? 4 : 0) | (val(i, j + 1) >= lv ? 8 : 0);
+      for (const [e1, e2] of MS[c]) {
+        const a = edgeKey(i, j, e1), b = edgeKey(i, j, e2), sid = ea.length;
+        ea.push(a); eb.push(b);
+        (adj.get(a) || adj.set(a, []).get(a)).push(sid);
+        (adj.get(b) || adj.set(b, []).get(b)).push(sid);
+      }
+    }
+    const pt = (key) => {
+      const vert = key & 1, cell = key >> 1, i = cell % W, j = (cell / W) | 0;
+      if (!vert) { const v0 = val(i, j), v1 = val(i + 1, j), t = (lv - v0) / (v1 - v0 || 1e-9); return [X(i + t), Y(j)]; }
+      const v0 = val(i, j), v1 = val(i, j + 1), t = (lv - v0) / (v1 - v0 || 1e-9); return [X(i), Y(j + t)];
+    };
+    const used = new Uint8Array(ea.length);
+    const walk = (sid, from, keys) => { // følger kjeden fra segment sid, ut gjennom kanten som ikke er 'from'
+      while (true) {
+        used[sid] = 1;
+        const next = ea[sid] === from ? eb[sid] : ea[sid];
+        keys.push(next);
+        const cand = (adj.get(next) || []).find(t => !used[t]);
+        if (cand === undefined) return;
+        from = next; sid = cand;
+      }
+    };
+    for (let s = 0; s < ea.length; s++) {
+      if (used[s]) continue;
+      const fwd = [ea[s]]; walk(s, ea[s], fwd);
+      const back = [];
+      const c2 = (adj.get(ea[s]) || []).find(t => !used[t]);
+      if (c2 !== undefined) walk(c2, ea[s], back);
+      const keys = back.reverse().concat(fwd);
+      const p = [];
+      for (const kk of keys) { const [x, y] = pt(kk); p.push(x, y); }
+      if (p.length >= 4) paths.push(p);
+    }
+  }
+  return paths;
+}
+
+// Blå-støy-prikker: vektet pilkasting med minsteavstand
+function samplePoints(S, L, N, seed) {
+  let st = seed >>> 0 || 1;
+  const rnd = () => ((st = (st * 1664525 + 1013904223) >>> 0) / 4294967296);
+  // gjennomsnittlig mørkhet → minsteavstand
+  let mean = 0; const M = 400;
+  for (let i = 0; i < M; i++) mean += S(L.ix + rnd() * L.iw, L.iy + rnd() * L.ih);
+  mean = Math.max(mean / M, 0.02);
+  const rmin = Math.sqrt(L.iw * L.ih * mean / N) * 0.62;
+  const cs = rmin, gw = Math.ceil(L.iw / cs) + 1, gh = Math.ceil(L.ih / cs) + 1;
+  const grid = new Int32Array(gw * gh).fill(-1);
+  const pts = []; let tries = 0;
+  while (pts.length / 2 < N && tries < N * 60) {
+    tries++;
+    const x = L.ix + rnd() * L.iw, y = L.iy + rnd() * L.ih, d = S(x, y);
+    if (rnd() > d) continue;
+    const r = rmin * (0.75 + 0.6 * (1 - d));
+    const gx = ((x - L.ix) / cs) | 0, gy = ((y - L.iy) / cs) | 0, rr = Math.ceil(r / cs);
+    let ok = true;
+    for (let j = Math.max(0, gy - rr); j <= Math.min(gh - 1, gy + rr) && ok; j++)
+      for (let i = Math.max(0, gx - rr); i <= Math.min(gw - 1, gx + rr); i++) {
+        const q = grid[j * gw + i];
+        if (q >= 0 && Math.hypot(pts[q * 2] - x, pts[q * 2 + 1] - y) < r) { ok = false; break; }
+      }
+    if (!ok) continue;
+    const cell = gy * gw + gx;
+    if (grid[cell] >= 0) continue;
+    grid[cell] = pts.length / 2; pts.push(x, y);
+  }
+  return pts;
+}
+
+function genStipple(S, L, layerIdx) {
+  const pts = samplePoints(S, L, cfg.points, 7 + (layerIdx || 0) * 101);
+  const r = cfg.dotR, paths = [];
+  const segs = Math.max(6, Math.min(20, Math.round(2 * Math.PI * r / 0.15)));
+  for (let i = 0; i < pts.length; i += 2) {
+    const p = [];
+    if (r <= cfg.penWidth * 0.6) { p.push(pts[i], pts[i + 1], pts[i] + 0.05, pts[i + 1]); } // bare et trykk
+    else for (let s = 0; s <= segs; s++) { const a = s / segs * 2 * Math.PI; p.push(pts[i] + r * Math.cos(a), pts[i + 1] + r * Math.sin(a)); }
+    paths.push(p);
+  }
+  return paths;
+}
+
+// Én sammenhengende linje gjennom alle punktene (TSP): nærmeste nabo + 2-opt med nabolister
+function genTSP(S, L, layerIdx) {
+  const P = samplePoints(S, L, cfg.points, 11 + (layerIdx || 0) * 97), n = P.length / 2;
+  if (n < 3) return [];
+  // nabolister via rutenett
+  const K = 8, cs = Math.sqrt(L.iw * L.ih / n) * 1.5;
+  const gw = Math.ceil(L.iw / cs) + 1, gh = Math.ceil(L.ih / cs) + 1;
+  const cells = Array.from({ length: gw * gh }, () => []);
+  const cellOf = (i) => (((P[i * 2 + 1] - L.iy) / cs) | 0) * gw + (((P[i * 2] - L.ix) / cs) | 0);
+  for (let i = 0; i < n; i++) cells[cellOf(i)].push(i);
+  const D = (a, b) => Math.hypot(P[a * 2] - P[b * 2], P[a * 2 + 1] - P[b * 2 + 1]);
+  const nb = new Int32Array(n * K).fill(-1);
+  for (let i = 0; i < n; i++) {
+    const gx = ((P[i * 2] - L.ix) / cs) | 0, gy = ((P[i * 2 + 1] - L.iy) / cs) | 0;
+    let cand = [];
+    for (let r = 1; r < Math.max(gw, gh) && cand.length < K + 1; r++) {
+      cand = [];
+      for (let j = Math.max(0, gy - r); j <= Math.min(gh - 1, gy + r); j++)
+        for (let k = Math.max(0, gx - r); k <= Math.min(gw - 1, gx + r); k++) for (const q of cells[j * gw + k]) if (q !== i) cand.push(q);
+    }
+    cand.sort((a, b) => D(i, a) - D(i, b));
+    for (let k = 0; k < K && k < cand.length; k++) nb[i * K + k] = cand[k];
+  }
+  // nærmeste nabo-tur
+  const used = new Uint8Array(n), tour = new Int32Array(n);
+  let cur = 0; used[0] = 1; tour[0] = 0;
+  for (let t = 1; t < n; t++) {
+    let best = -1, bd = Infinity;
+    for (let k = 0; k < K; k++) { const q = nb[cur * K + k]; if (q >= 0 && !used[q]) { const d = D(cur, q); if (d < bd) { bd = d; best = q; } } }
+    if (best < 0) {
+      const gx = ((P[cur * 2] - L.ix) / cs) | 0, gy = ((P[cur * 2 + 1] - L.iy) / cs) | 0;
+      for (let r = 0; r < Math.max(gw, gh) && best < 0; r++) {
+        for (let j = Math.max(0, gy - r); j <= Math.min(gh - 1, gy + r); j++)
+          for (let k = Math.max(0, gx - r); k <= Math.min(gw - 1, gx + r); k++) {
+            if (Math.abs(j - gy) !== r && Math.abs(k - gx) !== r) continue;
+            for (const q of cells[j * gw + k]) if (!used[q]) { const d = D(cur, q); if (d < bd) { bd = d; best = q; } }
+          }
+        if (best >= 0 && bd <= r * cs) break;
+      }
+    }
+    used[best] = 1; tour[t] = best; cur = best;
+  }
+  // 2-opt
+  const pos = new Int32Array(n); for (let i = 0; i < n; i++) pos[tour[i]] = i;
+  const deadline = performance.now() + cfg.tspTime * 1000;
+  let improved = true;
+  while (improved && performance.now() < deadline) {
+    improved = false;
+    for (let i = 0; i < n; i++) {
+      if ((i & 255) === 0 && performance.now() > deadline) break;
+      const a = tour[i], b = tour[(i + 1) % n], dab = D(a, b);
+      for (let k = 0; k < K; k++) {
+        const c = nb[a * K + k]; if (c < 0) break;
+        const dac = D(a, c); if (dac >= dab) break;
+        const j = pos[c], d = tour[(j + 1) % n];
+        if (c === b || d === a) continue;
+        const delta = dac + D(b, d) - dab - D(c, d);
+        if (delta < -1e-7) {
+          let lo = Math.min(i, j) + 1, hi = Math.max(i, j);
+          while (lo < hi) { const t = tour[lo]; tour[lo] = tour[hi]; tour[hi] = t; pos[tour[lo]] = lo; pos[tour[hi]] = hi; lo++; hi--; }
+          improved = true; break;
+        }
+      }
+    }
+  }
+  // kutt turen ved lengste kant → åpen linje
+  let cut = 0, longest = -1;
+  for (let i = 0; i < n; i++) { const d = D(tour[i], tour[(i + 1) % n]); if (d > longest) { longest = d; cut = i; } }
+  const p = [];
+  for (let s = 1; s <= n; s++) { const q = tour[(cut + s) % n]; p.push(P[q * 2], P[q * 2 + 1]); }
+  return [p];
+}
+
+/* ---------- Vekst og trådkunst (ideer fra code-painter, tilpasset mm og ekte penn) ----------
+   Begge kjører i en egen Web Worker og sender mellomresultater, så du ser linjen vokse. */
+const workers = new Set();
+function runWorker(fn, msg, transfer, onProgress) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(new Blob(["(" + fn.toString() + ")()"], { type: "text/javascript" }));
+    const w = new Worker(url); URL.revokeObjectURL(url);
+    workers.add(w);
+    w.onmessage = (e) => {
+      if (e.data.type === "progress") onProgress && onProgress(e.data);
+      else { workers.delete(w); w.terminate(); resolve(e.data); }
+    };
+    w.onerror = (e) => { workers.delete(w); w.terminate(); reject(e); };
+    w.postMessage(msg, transfer || []);
+  });
+}
+function stopWorkers() { for (const w of workers) w.terminate(); workers.clear(); }
+
+// Mørkhetsfeltet nedsamplet, for å sende til en worker
+function smallField(S, L, long) {
+  const k = long / Math.max(L.iw, L.ih), fw = Math.max(8, Math.round(L.iw * k)), fh = Math.max(8, Math.round(L.ih * k));
+  const f = new Float32Array(fw * fh);
+  for (let j = 0; j < fh; j++) for (let i = 0; i < fw; i++) f[j * fw + i] = S(L.ix + (i + 0.5) / fw * L.iw, L.iy + (j + 0.5) / fh * L.ih);
+  return { f, fw, fh };
+}
+
+// Differensiell vekst: én lukket linje som vokser fra den mørkeste delen. Punktene holder naboene nær (glatt linje)
+// og skyver alle andre bort innenfor sin avstand; avstanden er kort i mørke partier og lang i lyse.
+function growthWorkerMain() {
+  onmessage = (e) => {
+    const { f, fw, fh, ix, iy, iw, ih, rMin, rMax, cap, time } = e.data;
+    const at = (x, y) => f[Math.min(fh - 1, Math.max(0, ((y - iy) / ih * fh) | 0)) * fw + Math.min(fw - 1, Math.max(0, ((x - ix) / iw * fw) | 0))];
+    const x = new Float64Array(cap), y = new Float64Array(cap), nx = new Int32Array(cap), pv = new Int32Array(cap);
+    const R = new Float64Array(cap), fx = new Float64Array(cap), fy = new Float64Array(cap), link = new Int32Array(cap);
+    // frø: en liten ring i det mørkeste området (snitt over et lite vindu, så én mørk prikk ikke vinner)
+    let bi = fw >> 1, bj = fh >> 1, bd = -1;
+    for (let j = 2; j < fh - 2; j++) for (let i = 2; i < fw - 2; i++) {
+      let d = 0; for (let v = -2; v <= 2; v++) for (let u = -2; u <= 2; u++) d += f[(j + v) * fw + i + u];
+      if (d > bd) { bd = d; bi = i; bj = j; }
+    }
+    const cx = ix + (bi + 0.5) / fw * iw, cy = iy + (bj + 0.5) / fh * ih, r0 = rMin * 2;
+    let n = 16;
+    for (let i = 0; i < n; i++) { x[i] = cx + Math.cos(i / n * 6.2832) * r0; y[i] = cy + Math.sin(i / n * 6.2832) * r0; nx[i] = (i + 1) % n; pv[i] = (i - 1 + n) % n; }
+    const cs = Math.max(rMin * 2, rMax / 6), gw = Math.ceil(iw / cs) + 1, gh = Math.ceil(ih / cs) + 1, head = new Int32Array(gw * gh);
+    const t0 = performance.now(); let full = 0, last = 0, steps = 0;
+    const snapshot = () => { const P = new Float32Array(n * 2); let it = 0; for (let c = 0; c < n; c++) { P[c * 2] = x[it]; P[c * 2 + 1] = y[it]; it = nx[it]; } return P; };
+    while (performance.now() - t0 < time * 1000) {
+      steps++;
+      for (let i = 0; i < n; i++) { const d = at(x[i], y[i]); R[i] = d < 0.04 ? rMax * 1.3 : rMin + (rMax - rMin) * Math.pow(1 - Math.min(0.9, d), 2); }
+      head.fill(-1);
+      for (let i = 0; i < n; i++) { const g = Math.min(gh - 1, Math.max(0, ((y[i] - iy) / cs) | 0)) * gw + Math.min(gw - 1, Math.max(0, ((x[i] - ix) / cs) | 0)); link[i] = head[g]; head[g] = i; }
+      for (let i = 0; i < n; i++) {
+        const xi = x[i], yi = y[i], ri = R[i], p = pv[i], q = nx[i];
+        let ax = ((x[p] + x[q]) / 2 - xi) * 0.35, ay = ((y[p] + y[q]) / 2 - yi) * 0.35;
+        const gx = ((xi - ix) / cs) | 0, gy = ((yi - iy) / cs) | 0, gr = Math.min(10, Math.ceil(ri / cs));
+        for (let yy = Math.max(0, gy - gr); yy <= Math.min(gh - 1, gy + gr); yy++) for (let xx = Math.max(0, gx - gr); xx <= Math.min(gw - 1, gx + gr); xx++)
+          for (let j = head[yy * gw + xx]; j >= 0; j = link[j]) {
+            if (j === i || j === p || j === q) continue;
+            const dx = xi - x[j], dy = yi - y[j], d2 = dx * dx + dy * dy, rr = (ri + R[j]) * 0.5;
+            if (d2 >= rr * rr || d2 < 1e-9) continue;
+            const d = Math.sqrt(d2), k = (rr - d) / rr * rr * 0.8 / d; ax += dx * k; ay += dy * k;
+          }
+        if (at(xi, yi) < 0.04) { ax += (at(xi + rMax, yi) - at(xi - rMax, yi)) * rMax * 0.6; ay += (at(xi, yi + rMax) - at(xi, yi - rMax)) * rMax * 0.6; }
+        fx[i] = ax; fy[i] = ay;
+      }
+      for (let i = 0; i < n; i++) {
+        let ax = fx[i], ay = fy[i]; const l = Math.hypot(ax, ay), lim = R[i] * 0.14;
+        if (l > lim) { ax *= lim / l; ay *= lim / l; }
+        x[i] = Math.min(ix + iw, Math.max(ix, x[i] + ax)); y[i] = Math.min(iy + ih, Math.max(iy, y[i] + ay));
+      }
+      // vekst: et nytt punkt i hver kant som er strukket lenger enn avstanden
+      let grown = 0, it = (Math.random() * n) | 0;
+      const budget = Math.max(1, (n * 0.006 + 1) | 0);
+      for (let c = 0; c < n && n < cap && grown < budget; c++) {
+        const j = nx[it];
+        if (Math.hypot(x[j] - x[it], y[j] - y[it]) > Math.min(R[it], R[j]) * 0.62) {
+          const k = n++; x[k] = (x[it] + x[j]) / 2 + (Math.random() - 0.5) * 0.02; y[k] = (y[it] + y[j]) / 2 + (Math.random() - 0.5) * 0.02;
+          nx[it] = k; pv[k] = it; nx[k] = j; pv[j] = k; R[k] = R[it]; grown++;
+        }
+        it = j;
+      }
+      // i starten: også noen punkter på tilfeldige steder, så den lille ringen bukter seg i stedet for å krympe
+      for (let t = 0; n < 400 && n < cap && t < 3; t++) {
+        const a = (Math.random() * n) | 0, j = nx[a];
+        if (Math.hypot(x[j] - x[a], y[j] - y[a]) < rMin * 0.25) continue;
+        const k = n++; x[k] = (x[a] + x[j]) / 2 + (Math.random() - 0.5) * rMin * 0.3; y[k] = (y[a] + y[j]) / 2 + (Math.random() - 0.5) * rMin * 0.3;
+        nx[a] = k; pv[k] = a; nx[k] = j; pv[j] = k; R[k] = R[a]; grown++;
+      }
+      if (n >= cap || (grown === 0 && n >= 400)) full++; else full = 0;
+      if (full > 250) break; // ferdig: fullt, eller linjen har sluttet å vokse
+      const now = performance.now();
+      if (now - last > 120) { last = now; const P = snapshot(); postMessage({ type: "progress", P, n, t: (now - t0) / 1000 }, [P.buffer]); }
+    }
+    const P = snapshot(); postMessage({ type: "done", P, n }, [P.buffer]);
+  };
+}
+
+async function genGrowth(S, L, li, onProgress) {
+  const { f, fw, fh } = smallField(S, L, 220);
+  const rMin = Math.max(cfg.growMin, cfg.penWidth * 1.5), rMax = Math.max(cfg.growMax, rMin * 1.5);
+  const toPath = (P) => { const p = Array.from(P); if (p.length >= 4) p.push(p[0], p[1]); return chaikin(p); };
+  const res = await runWorker(growthWorkerMain, { f, fw, fh, ix: L.ix, iy: L.iy, iw: L.iw, ih: L.ih, rMin, rMax, cap: cfg.growPoints, time: cfg.growTime },
+    [f.buffer], (m) => onProgress([toPath(m.P)], `vekst: ${m.n.toLocaleString("no")} punkter, ${m.t.toFixed(0)} s`));
+  return [toPath(res.P)];
+}
+// Chaikin-glatting: myke kurver i stedet for knekk
+function chaikin(p) {
+  const o = [p[0], p[1]], n = p.length / 2;
+  for (let i = 0; i < n - 1; i++) {
+    const x0 = p[i * 2], y0 = p[i * 2 + 1], x1 = p[i * 2 + 2], y1 = p[i * 2 + 3];
+    o.push(0.75 * x0 + 0.25 * x1, 0.75 * y0 + 0.25 * y1, 0.25 * x0 + 0.75 * x1, 0.25 * y0 + 0.75 * y1);
+  }
+  o.push(p[p.length - 2], p[p.length - 1]);
+  return o;
+}
+
+// Trådkunst: én tråd mellom spiker. Fra spikeren den står på går tråden til spikeren der linjen dekker mest
+// gjenstående mørke; så trekkes linjens dekning fra, og videre. Dekningen regnes fra ekte pennebredde.
+function stringWorkerMain() {
+  onmessage = (e) => {
+    const { E, gw, gh, px, py, side, lines, minGap, weight, circle } = e.data, pins = px.length;
+    const walk = (a, b, sub) => {
+      const x0 = px[a], y0 = py[a], dx = px[b] - x0, dy = py[b] - y0, n = Math.max(1, Math.floor(Math.hypot(dx, dy)));
+      let s = 0;
+      for (let k = 0; k <= n; k++) {
+        const i = Math.min(gh - 1, Math.round(y0 + dy * k / n)) * gw + Math.min(gw - 1, Math.round(x0 + dx * k / n));
+        if (sub) E[i] -= weight; else s += E[i]; // overtegnede ruter blir negative og straffer linjen
+      }
+      return s / (n + 1);
+    };
+    const seq = [0], recent = [];
+    let cur = 0, last = 0;
+    for (let l = 0; l < lines; l++) {
+      let best = -1, bv = -0.08; // stopper når alle linjer ville gjort bildet for mørkt
+      for (let t = 0; t < pins; t++) {
+        const gap = Math.abs(t - cur), g = Math.min(gap, pins - gap);
+        if (g < minGap || (!circle && side[t] === side[cur]) || recent.includes(t)) continue;
+        const v = walk(cur, t, false);
+        if (v > bv) { bv = v; best = t; }
+      }
+      if (best < 0) break;
+      walk(cur, best, true);
+      seq.push(best); recent.push(best); if (recent.length > 20) recent.shift(); cur = best;
+      const now = performance.now();
+      if (now - last > 120) { last = now; postMessage({ type: "progress", seq: seq.slice() }); }
+    }
+    postMessage({ type: "done", seq });
+  };
+}
+
+async function genString(S, L, li, onProgress) {
+  const circle = cfg.saFrame === "circle";
+  let fx0 = L.ix, fy0 = L.iy, fwmm = L.iw, fhmm = L.ih;
+  if (circle) { const d = Math.min(L.iw, L.ih); fx0 = L.ix + (L.iw - d) / 2; fy0 = L.iy + (L.ih - d) / 2; fwmm = fhmm = d; }
+  const long = 420, k = long / Math.max(fwmm, fhmm), gw = Math.round(fwmm * k), gh = Math.round(fhmm * k), pxmm = 1 / k;
+  const E = new Float32Array(gw * gh), cx = gw / 2, cy = gh / 2;
+  for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
+    if (circle && Math.hypot(i + 0.5 - cx, j + 0.5 - cy) > gw / 2) continue;
+    const d = S(fx0 + (i + 0.5) * pxmm, fy0 + (j + 0.5) * pxmm);
+    E[j * gw + i] = Math.pow(Math.max(0, (d - 0.1) / 0.9), 1.6); // lyse partier skal være tomme
+  }
+  // spikerne, i rutenettets koordinater
+  const N = cfg.saPins, px = new Float32Array(N), py = new Float32Array(N), side = new Int8Array(N);
+  if (circle) for (let i = 0; i < N; i++) { const a = 2 * Math.PI * (i / N + li * 0.13) - Math.PI / 2; px[i] = cx + (gw / 2 - 0.5) * Math.cos(a); py[i] = cy + (gh / 2 - 0.5) * Math.sin(a); }
+  else {
+    const per = 2 * (gw + gh - 2);
+    for (let i = 0; i < N; i++) {
+      let s = ((i + li * 0.37) / N) * per;
+      if (s < gw - 1) { px[i] = s; py[i] = 0; side[i] = 0; }
+      else if ((s -= gw - 1) < gh - 1) { px[i] = gw - 1; py[i] = s; side[i] = 1; }
+      else if ((s -= gh - 1) < gw - 1) { px[i] = gw - 1 - s; py[i] = gh - 1; side[i] = 2; }
+      else { s -= gw - 1; px[i] = 0; py[i] = gh - 1 - s; side[i] = 3; }
+    }
+  }
+  const weight = Math.min(1, cfg.penWidth / pxmm) * cfg.saWeight; // hvor mye av en rute én strek dekker
+  const pinMM = (i) => [fx0 + (px[i] + 0.5) * pxmm, fy0 + (py[i] + 0.5) * pxmm];
+  const toPath = (seq) => { const p = []; for (const i of seq) p.push(...pinMM(i)); return p; };
+  const res = await runWorker(stringWorkerMain, { E, gw, gh, px, py, side, lines: cfg.saLines, minGap: circle ? Math.round(N / 12) : 2, weight, circle },
+    [E.buffer], (m) => onProgress([toPath(m.seq)], `trådkunst: ${(m.seq.length - 1).toLocaleString("no")} tråder`));
+  const out = [toPath(res.seq)];
+  if (cfg.saPinsDraw) for (let i = 0; i < N; i++) { const [x, y] = pinMM(i), r = 0.6; const c = []; for (let s = 0; s <= 8; s++) c.push(x + r * Math.cos(s / 8 * 6.2832), y + r * Math.sin(s / 8 * 6.2832)); out.push(c); }
+  return out;
+}
+
+/* ---------- Code Painter-import ----------
+   Code Painters SVG består av former: buede penselstrøk (path med Q og stroke-width), ellipser og polygoner,
+   hver med en fargeovergang og en opasitet. Her blir de til plotterstreker: strøk fylles med parallelle linjer
+   over bredden (som busthår), flater skraveres, og det som er malt over senere, blir skjult. */
+let cpDoc = null; // { w, h, bg, shapes: [...] }
+
+function parseColor(c) {
+  if (!c) return null;
+  c = c.trim();
+  let m = c.match(/^#([0-9a-f]{3})$/i);
+  if (m) return [...m[1]].map(h => parseInt(h + h, 16));
+  m = c.match(/^#([0-9a-f]{6})$/i);
+  if (m) return [0, 2, 4].map(i => parseInt(m[1].substr(i, 2), 16));
+  m = c.match(/rgba?\(([^)]+)\)/i);
+  if (m) return m[1].split(",").slice(0, 3).map(v => parseFloat(v));
+  return null;
+}
+// SVG-transform → matrise [a b c d e f]
+function parseTransform(t) {
+  let M = [1, 0, 0, 1, 0, 0];
+  const mul = (A, B) => [A[0] * B[0] + A[2] * B[1], A[1] * B[0] + A[3] * B[1], A[0] * B[2] + A[2] * B[3], A[1] * B[2] + A[3] * B[3], A[0] * B[4] + A[2] * B[5] + A[4], A[1] * B[4] + A[3] * B[5] + A[5]];
+  if (!t) return M;
+  for (const [, fn, args] of t.matchAll(/(\w+)\s*\(([^)]*)\)/g)) {
+    const a = args.split(/[\s,]+/).filter(Boolean).map(Number);
+    let T = [1, 0, 0, 1, 0, 0];
+    if (fn === "translate") T = [1, 0, 0, 1, a[0] || 0, a[1] || 0];
+    else if (fn === "scale") T = [a[0], 0, 0, a.length > 1 ? a[1] : a[0], 0, 0];
+    else if (fn === "rotate") {
+      const r = a[0] * Math.PI / 180, c = Math.cos(r), s = Math.sin(r);
+      T = [c, s, -s, c, 0, 0];
+      if (a.length > 2) T = mul(mul([1, 0, 0, 1, a[1], a[2]], T), [1, 0, 0, 1, -a[1], -a[2]]);
+    } else if (fn === "matrix") T = a.slice(0, 6);
+    M = mul(M, T);
+  }
+  return M;
+}
+const applyM = (M, x, y) => [M[0] * x + M[2] * y + M[4], M[1] * x + M[3] * y + M[5]];
+
+function parseCodePainterSVG(text) {
+  const doc = new DOMParser().parseFromString(text, "image/svg+xml");
+  const svg = doc.querySelector("svg");
+  if (!svg) return null;
+  const vb = (svg.getAttribute("viewBox") || "").split(/[\s,]+/).map(Number);
+  const w = vb.length === 4 ? vb[2] : parseFloat(svg.getAttribute("width")) || 1000;
+  const h = vb.length === 4 ? vb[3] : parseFloat(svg.getAttribute("height")) || 1000;
+  const grads = {};
+  for (const g of doc.querySelectorAll("linearGradient, radialGradient")) {
+    const stops = [...g.querySelectorAll("stop")].map(s => parseColor(s.getAttribute("stop-color") || (s.getAttribute("style") || "").replace(/.*stop-color:\s*([^;]+).*/, "$1"))).filter(Boolean);
+    if (!stops.length) continue;
+    const avg = [0, 1, 2].map(k => stops.reduce((a, c) => a + c[k], 0) / stops.length);
+    const ang = g.tagName.toLowerCase().includes("linear") ? Math.atan2(+g.getAttribute("y2") - +g.getAttribute("y1"), +g.getAttribute("x2") - +g.getAttribute("x1")) : null;
+    grads[g.id] = { color: avg, ang, soft: !g.tagName.toLowerCase().includes("linear") };
+  }
+  const paint = (v) => { if (!v || v === "none") return null; const m = v.match(/url\(#([^)]+)\)/); return m ? grads[m[1]] || null : { color: parseColor(v), ang: null }; };
+  const shapes = [];
+  let bg = null;
+  const ctm = (el) => { let M = [1, 0, 0, 1, 0, 0]; const chain = []; for (let e = el; e && e !== svg; e = e.parentElement) chain.unshift(e); for (const e of chain) M = (() => { const T = parseTransform(e.getAttribute("transform")); return [M[0] * T[0] + M[2] * T[1], M[1] * T[0] + M[3] * T[1], M[0] * T[2] + M[2] * T[3], M[1] * T[2] + M[3] * T[3], M[0] * T[4] + M[2] * T[5] + M[4], M[1] * T[4] + M[3] * T[5] + M[5]]; })(); return M; };
+  for (const el of svg.querySelectorAll("rect, ellipse, circle, polygon, path")) {
+    if (el.closest("defs")) continue;
+    const op = parseFloat(el.getAttribute("opacity") ?? "1");
+    const M = ctm(el);
+    const fill = paint(el.getAttribute("fill")), stroke = paint(el.getAttribute("stroke"));
+    const tag = el.tagName.toLowerCase();
+    if (tag === "rect") {
+      const x = +el.getAttribute("x") || 0, y = +el.getAttribute("y") || 0, rw = +el.getAttribute("width") || 0, rh = +el.getAttribute("height") || 0;
+      if (!fill?.color) continue;
+      if (!shapes.length && rw >= w * 0.98 && rh >= h * 0.98) { bg = fill.color; continue; } // bakgrunnen
+      shapes.push({ kind: "poly", pts: [[x, y], [x + rw, y], [x + rw, y + rh], [x, y + rh]].flatMap(([a, b]) => applyM(M, a, b)), color: fill.color, ang: fill.ang, alpha: op });
+    } else if (tag === "ellipse" || tag === "circle") {
+      if (!fill?.color) continue;
+      const cx = +el.getAttribute("cx") || 0, cy = +el.getAttribute("cy") || 0;
+      const rx = +(el.getAttribute("rx") ?? el.getAttribute("r")) || 0, ry = +(el.getAttribute("ry") ?? el.getAttribute("r")) || 0;
+      const k = fill.soft ? 0.8 : 1, pts = []; // myk klatt: den synlige delen er litt mindre enn ellipsen
+      for (let i = 0; i < 48; i++) { const a = i / 48 * 2 * Math.PI; pts.push(...applyM(M, cx + Math.cos(a) * rx * k, cy + Math.sin(a) * ry * k)); }
+      shapes.push({ kind: "poly", pts, color: fill.color, ang: fill.ang, alpha: op, soft: !!fill.soft });
+    } else if (tag === "polygon") {
+      if (!fill?.color) continue;
+      const n = (el.getAttribute("points") || "").trim().split(/[\s,]+/).map(Number), pts = [];
+      for (let i = 0; i + 1 < n.length; i += 2) pts.push(...applyM(M, n[i], n[i + 1]));
+      shapes.push({ kind: "poly", pts, color: fill.color, ang: fill.ang, alpha: op });
+    } else if (tag === "path") {
+      const d = el.getAttribute("d") || "";
+      const m = d.match(/^\s*M\s*([-\d.e]+)[\s,]+([-\d.e]+)\s*Q\s*([-\d.e]+)[\s,]+([-\d.e]+)[\s,]+([-\d.e]+)[\s,]+([-\d.e]+)\s*$/i);
+      const lw = parseFloat(el.getAttribute("stroke-width") || "1");
+      if (m && stroke?.color) {
+        const v = m.slice(1).map(Number), q = [];
+        for (let i = 0; i < 6; i += 2) q.push(...applyM(M, v[i], v[i + 1]));
+        const scale = Math.sqrt(Math.abs(M[0] * M[3] - M[1] * M[2])) || 1;
+        shapes.push({ kind: "stroke", q, width: lw * scale, color: stroke.color, alpha: op });
+      }
+    }
+  }
+  return shapes.length ? { w, h, bg, shapes } : null;
+}
+
+const luma = (c) => (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255;
+function toneOf(dark) {
+  let v = cfg.invert ? 1 - dark : dark;
+  v = clamp((v - 0.5) * cfg.contrast + 0.5 - cfg.brightness, 0, 1);
+  return Math.pow(v, cfg.gamma);
+}
+// Farger → et lite antall penner (k-means vektet med areal), lyse penner først
+function palette(shapes, K) {
+  const cols = shapes.map(s => s.color), wts = shapes.map(s => s.area || 1);
+  const C = [cols[wts.indexOf(Math.max(...wts))].slice()];
+  while (C.length < K) { // lengst unna eksisterende senter
+    let bi = 0, bd = -1;
+    cols.forEach((c, i) => { const d = Math.min(...C.map(q => (q[0] - c[0]) ** 2 + (q[1] - c[1]) ** 2 + (q[2] - c[2]) ** 2)) * Math.sqrt(wts[i]); if (d > bd) { bd = d; bi = i; } });
+    C.push(cols[bi].slice());
+  }
+  const asg = new Int32Array(cols.length);
+  for (let it = 0; it < 12; it++) {
+    cols.forEach((c, i) => { let b = 0, bd = Infinity; C.forEach((q, k) => { const d = (q[0] - c[0]) ** 2 + (q[1] - c[1]) ** 2 + (q[2] - c[2]) ** 2; if (d < bd) { bd = d; b = k; } }); asg[i] = b; });
+    const S = C.map(() => [0, 0, 0, 0]);
+    cols.forEach((c, i) => { const s = S[asg[i]]; s[0] += c[0] * wts[i]; s[1] += c[1] * wts[i]; s[2] += c[2] * wts[i]; s[3] += wts[i]; });
+    S.forEach((s, k) => { if (s[3]) C[k] = [s[0] / s[3], s[1] / s[3], s[2] / s[3]]; });
+  }
+  const order = C.map((c, k) => k).sort((a, b) => luma(C[b]) - luma(C[a]));
+  const remap = new Int32Array(K); order.forEach((k, i) => remap[k] = i);
+  return { colors: order.map(k => C[k]), asg: Array.from(asg, a => remap[a]) };
+}
+const toHex = (c) => "#" + c.map(v => Math.round(clamp(v, 0, 255)).toString(16).padStart(2, "0")).join("");
+
+function genCodePainter(L, D) {
+  const sc = L.iw / D.w; // mm per SVG-enhet
+  const X = (x) => L.ix + x * sc, Y = (y) => L.iy + y * sc;
+  // hvilke former som er med
+  let list = D.shapes.filter(s => s.alpha >= cfg.cpMinAlpha);
+  if (cfg.cpBg && D.bg) list = [{ kind: "poly", pts: [0, 0, D.w, 0, D.w, D.h, 0, D.h], color: D.bg, alpha: 1, ang: null, bg: true }, ...list];
+  for (const s of list) {
+    if (s.kind === "stroke") { const [x0, y0, x1, y1, x2, y2] = s.q; s.area = (Math.hypot(x1 - x0, y1 - y0) + Math.hypot(x2 - x1, y2 - y1)) * s.width; }
+    else { let a = 0; const p = s.pts, n = p.length / 2; for (let i = 0; i < n; i++) { const j = (i + 1) % n; a += p[i * 2] * p[j * 2 + 1] - p[j * 2] * p[i * 2 + 1]; } s.area = Math.abs(a / 2) + 1; }
+  }
+  // synlighetskart: hver form tegnes i sin egen «farge» (nummer) i maling-rekkefølge; det som vinner en piksel, er synlig der
+  const VB = 1600, q = VB / Math.max(D.w, D.h), vw = Math.ceil(D.w * q), vh = Math.ceil(D.h * q);
+  let ids = null;
+  if (cfg.cpHide) {
+    const c = document.createElement("canvas"); c.width = vw; c.height = vh;
+    const x = c.getContext("2d", { willReadFrequently: true });
+    x.fillStyle = "#000"; x.fillRect(0, 0, vw, vh);
+    list.forEach((s, i) => {
+      const col = "#" + (i + 1).toString(16).padStart(6, "0");
+      x.beginPath();
+      if (s.kind === "stroke") { const [x0, y0, x1, y1, x2, y2] = s.q; x.moveTo(x0 * q, y0 * q); x.quadraticCurveTo(x1 * q, y1 * q, x2 * q, y2 * q); x.strokeStyle = col; x.lineWidth = s.width * q; x.lineCap = "round"; x.stroke(); }
+      else { const p = s.pts; x.moveTo(p[0] * q, p[1] * q); for (let k = 2; k < p.length; k += 2) x.lineTo(p[k] * q, p[k + 1] * q); x.closePath(); x.fillStyle = col; x.fill(); }
+    });
+    const d = x.getImageData(0, 0, vw, vh).data;
+    ids = new Int32Array(vw * vh);
+    for (let i = 0; i < vw * vh; i++) ids[i] = (d[i * 4] << 16 | d[i * 4 + 1] << 8 | d[i * 4 + 2]) - 1;
+  }
+  const visible = (i, x, y) => {
+    if (!ids) return true;
+    const px = (x * q) | 0, py = (y * q) | 0;
+    if (px < 0 || py < 0 || px >= vw || py >= vh) return false;
+    return ids[py * vw + px] === i;
+  };
+  // penner
+  const multi = cfg.cpPens > 1 && list.length >= cfg.cpPens;
+  const pal = multi ? palette(list, cfg.cpPens) : null;
+  const layers = multi ? pal.colors.map((c, k) => ({ name: `Penn ${k + 1}`, color: toHex(c), paths: [] })) : [{ name: "Penn 1", color: cfg.penColor, paths: [] }];
+  const step = 0.3 / sc; // prøveavstand langs linjene, i SVG-enheter
+  list.forEach((s, i) => {
+    const out = layers[multi ? pal.asg[i] : 0].paths;
+    let sp = cfg.cpSpacing / sc;
+    if (cfg.cpTone) {
+      const d = toneOf(1 - luma(s.color));
+      if (!multi) { if (d < 0.04) return; sp /= Math.max(0.12, d); }
+      else sp /= Math.max(0.35, 0.35 + 0.65 * d);
+    }
+    const runs = new Runs();
+    const put = (x, y) => { if (visible(i, x, y)) runs.add(X(x), Y(y)); else runs.lift(); };
+    if (s.kind === "stroke") {
+      const [x0, y0, x1, y1, x2, y2] = s.q;
+      const P = (t) => { const u = 1 - t; return [u * u * x0 + 2 * u * t * x1 + t * t * x2, u * u * y0 + 2 * u * t * y1 + t * t * y2]; };
+      const T = (t) => { const dx = 2 * (1 - t) * (x1 - x0) + 2 * t * (x2 - x1), dy = 2 * (1 - t) * (y1 - y0) + 2 * t * (y2 - y1), l = Math.hypot(dx, dy) || 1; return [dx / l, dy / l]; };
+      const len = Math.hypot(x1 - x0, y1 - y0) + Math.hypot(x2 - x1, y2 - y1), N = Math.max(2, Math.ceil(len / step));
+      const lines = cfg.cpFill === "brush" ? Math.max(1, Math.round(s.width / sp)) : 1;
+      for (let k = 0; k < lines; k++) {
+        const o = lines === 1 ? 0 : (-(lines - 1) / 2 + k) * (s.width / lines);
+        // de runde endene: linjen forlenges så langt halvsirkelen rekker ved denne forskyvningen
+        const ext = Math.sqrt(Math.max(0, (s.width / 2) ** 2 - o * o)), E = Math.ceil(ext / step);
+        const [sx, sy] = P(0), [stx, sty] = T(0), [ex, ey] = P(1), [etx, ety] = T(1);
+        const seq = [];
+        for (let j = E; j > 0; j--) { const e = ext * j / E; seq.push([sx - stx * e - sty * o, sy - sty * e + stx * o]); }
+        for (let j = 0; j <= N; j++) { const t = j / N, [px, py] = P(t), [tx, ty] = T(t); seq.push([px - ty * o, py + tx * o]); }
+        for (let j = 1; j <= E; j++) { const e = ext * j / E; seq.push([ex + etx * e - ety * o, ey + ety * e + etx * o]); }
+        if (k % 2) seq.reverse();
+        for (const [px, py] of seq) put(px, py);
+        runs.lift();
+      }
+    } else {
+      const p = s.pts, n = p.length / 2;
+      let cx = 0, cy = 0; for (let k = 0; k < n; k++) { cx += p[k * 2]; cy += p[k * 2 + 1]; } cx /= n; cy /= n;
+      if (cfg.cpFill === "brush") {
+        // skravur inni flaten, på tvers av fargeovergangen
+        const a = (s.ang != null ? s.ang + Math.PI / 2 : cfg.angle * Math.PI / 180), ux = Math.cos(a), uy = Math.sin(a), nx = -uy, ny = ux;
+        let vmin = Infinity, vmax = -Infinity;
+        for (let k = 0; k < n; k++) { const v = p[k * 2] * nx + p[k * 2 + 1] * ny; vmin = Math.min(vmin, v); vmax = Math.max(vmax, v); }
+        let row = 0;
+        for (let v = vmin + sp / 2; v < vmax; v += sp, row++) {
+          const xs = [];
+          for (let k = 0; k < n; k++) {
+            const j = (k + 1) % n, ax = p[k * 2], ay = p[k * 2 + 1], bx = p[j * 2], by = p[j * 2 + 1];
+            const va = ax * nx + ay * ny, vb = bx * nx + by * ny;
+            if ((va <= v) !== (vb <= v)) { const t = (v - va) / (vb - va); xs.push((ax + (bx - ax) * t) * ux + (ay + (by - ay) * t) * uy); }
+          }
+          xs.sort((A, B) => A - B);
+          if (row % 2) xs.reverse();
+          for (let k = 0; k + 1 < xs.length; k += 2) {
+            const u0 = xs[k], u1 = xs[k + 1], m = Math.max(1, Math.ceil(Math.abs(u1 - u0) / step));
+            for (let j = 0; j <= m; j++) { const u = u0 + (u1 - u0) * j / m; put(u * ux + v * nx, u * uy + v * ny); }
+            runs.lift();
+          }
+        }
+      }
+      if (cfg.cpFill !== "brush" || (!s.soft && !s.bg && cfg.cpOutline)) {
+        // konturen, prøvd litt innenfor kanten (selve kanten er glattet i synlighetskartet)
+        const inset = 1.5 / q;
+        for (let k = 0; k <= n; k++) {
+          const a = k % n, b = (k + 1) % n, ax = p[a * 2], ay = p[a * 2 + 1], bx = p[b * 2], by = p[b * 2 + 1];
+          const m = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / step));
+          for (let j = 0; j < m; j++) {
+            const x = ax + (bx - ax) * j / m, y = ay + (by - ay) * j / m, dl = Math.hypot(cx - x, cy - y) || 1;
+            if (visible(i, x + (cx - x) / dl * inset, y + (cy - y) / dl * inset)) runs.add(X(x), Y(y)); else runs.lift();
+          }
+        }
+        runs.lift();
+      }
+    }
+    runs.lift();
+    for (const r of runs.out) out.push(r);
+  });
+  return layers;
+}
+
+async function loadCodePainterSVG(text, name) {
+  const doc = parseCodePainterSVG(text);
+  if (!doc) return false;
+  cpDoc = doc;
+  // bildet selv lastes også, så de andre stilene og «vis bildet under» virker
+  await new Promise((res) => {
+    const url = URL.createObjectURL(new Blob([text], { type: "image/svg+xml" }));
+    const im = new Image();
+    im.onload = () => { const c = document.createElement("canvas"); const k = 1600 / Math.max(doc.w, doc.h); c.width = Math.round(doc.w * k); c.height = Math.round(doc.h * k); c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(url); img = null; loadBitmapSource(c, name); res(); };
+    im.onerror = () => { URL.revokeObjectURL(url); const c = document.createElement("canvas"); c.width = Math.round(doc.w); c.height = Math.round(doc.h); c.getContext("2d").fillStyle = "#fff"; loadBitmapSource(c, name); res(); };
+    im.src = url;
+  });
+  cfg.style = "codepainter"; cfg.cpSource = "file"; syncUI(); saveCfg(); schedule();
+  for (const c of document.querySelectorAll("#demos .chip")) c.setAttribute("aria-pressed", "false");
+  toast(`Fant ${doc.shapes.length.toLocaleString("no")} former fra Code Painter`);
+  return true;
+}
+
+/* Egen maler: lager penselstrøk av bildet (lag på lag, grove til fine, hvert strøk følger formene i bildet),
+   i samme format som en Code Painter-SVG. Brukes når ingen SVG fra Code Painter er lastet inn. */
+let autoDoc = null, autoKey = "";
+function autoPaint(L) {
+  const key = [img.label, img.w, img.h, cfg.cpBrush, cfg.cpDetail, L.iw.toFixed(2)].join("|");
+  if (autoDoc && autoKey === key) return autoDoc;
+  const { w, h, r: R, g: G, b: B } = img, n = w * h, mmPerPx = L.iw / w;
+  let st = 12345; const rnd = () => ((st = (st * 1664525 + 1013904223) >>> 0) / 4294967296);
+  // lerretet starter hvitt (papiret)
+  const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+  const cx = cv.getContext("2d", { willReadFrequently: true });
+  cx.fillStyle = "#fff"; cx.fillRect(0, 0, w, h);
+  let cur = cx.getImageData(0, 0, w, h).data;
+  const shapes = [];
+  const thr = 0.06 + (1 - cfg.cpDetail) * 0.25; // hvor stor fargefeil som må til før et strøk males
+  let rad = Math.max(1.5, cfg.cpBrush / 2 / mmPerPx);
+  const rMin = Math.max(1.5, Math.max(cfg.penWidth * 2, cfg.cpBrush / 10) / 2 / mmPerPx);
+  const flat = [Math.cos(cfg.angle * Math.PI / 180), Math.sin(cfg.angle * Math.PI / 180)]; // retning der bildet er helt flatt
+  while (true) {
+    const br = Math.max(1, Math.round(rad / 2));
+    const rr = boxBlur(R, w, h, br), gg = boxBlur(G, w, h, br), bb = boxBlur(B, w, h, br);
+    const lum = new Float32Array(n); for (let i = 0; i < n; i++) lum[i] = 0.2126 * rr[i] + 0.7152 * gg[i] + 0.0722 * bb[i];
+    const at = (a, x, y) => a[clamp(Math.round(y), 0, h - 1) * w + clamp(Math.round(x), 0, w - 1)];
+    const err = (i) => Math.hypot(cur[i * 4] / 255 - rr[i], cur[i * 4 + 1] / 255 - gg[i], cur[i * 4 + 2] / 255 - bb[i]);
+    const layer = [], stepG = Math.max(2, Math.round(rad));
+    for (let gy = 0; gy < h; gy += stepG) for (let gx = 0; gx < w; gx += stepG) {
+      let sum = 0, cnt = 0, mx = -1, mi = -1;
+      for (let y = gy; y < Math.min(h, gy + stepG); y++) for (let x = gx; x < Math.min(w, gx + stepG); x++) { const i = y * w + x, e = err(i); sum += e; cnt++; if (e > mx) { mx = e; mi = i; } }
+      if (sum / cnt < thr) continue;
+      // strøket: fra punktet med størst feil, langs kantene i bildet (på tvers av lysgradienten)
+      let x = mi % w, y = (mi / w) | 0;
+      const col = [rr[mi], gg[mi], bb[mi]], pts = [[x, y]];
+      let dx = 0, dy = 0;
+      const maxLen = rad * 4 * (0.6 + 0.8 * rnd());
+      for (let len = 0; len < maxLen;) {
+        const gxv = at(lum, x + 1, y) - at(lum, x - 1, y), gyv = at(lum, x, y + 1) - at(lum, x, y - 1);
+        let tx = -gyv, ty = gxv; const l = Math.hypot(tx, ty);
+        if (l < 2e-3) { if (len > 0) { tx = dx; ty = dy; } else { tx = flat[0]; ty = flat[1]; } } else { tx /= l; ty /= l; }
+        if (len === 0 && rnd() < 0.5) { tx = -tx; ty = -ty; }
+        if (tx * dx + ty * dy < 0) { tx = -tx; ty = -ty; }
+        if (len > 0) { tx = 0.6 * tx + 0.4 * dx; ty = 0.6 * ty + 0.4 * dy; const m = Math.hypot(tx, ty) || 1; tx /= m; ty /= m; }
+        const s = Math.max(1, rad * 0.5);
+        x += tx * s; y += ty * s; len += s; dx = tx; dy = ty;
+        if (x < 0 || y < 0 || x >= w || y >= h) break;
+        const ii = clamp(Math.round(y), 0, h - 1) * w + clamp(Math.round(x), 0, w - 1);
+        const dRef = Math.hypot(rr[ii] - col[0], gg[ii] - col[1], bb[ii] - col[2]);
+        const dCur = Math.hypot(cur[ii * 4] / 255 - col[0], cur[ii * 4 + 1] / 255 - col[1], cur[ii * 4 + 2] / 255 - col[2]);
+        if (len > rad * 1.5 && dRef > dCur) break; // farger bedre der den står enn det strøket ville gjort (men aldri bare en prikk)
+        pts.push([x, y]);
+      }
+      const a = pts[0], e = pts[pts.length - 1], m = pts[pts.length >> 1];
+      const q = pts.length < 2 ? [a[0], a[1], a[0] + 0.5, a[1], a[0] + 1, a[1]] : [a[0], a[1], 2 * m[0] - (a[0] + e[0]) / 2, 2 * m[1] - (a[1] + e[1]) / 2, e[0], e[1]];
+      layer.push({ kind: "stroke", q, width: rad * 2, color: col.map(v => v * 255), alpha: 1 });
+    }
+    for (let i = layer.length - 1; i > 0; i--) { const j = (rnd() * (i + 1)) | 0; [layer[i], layer[j]] = [layer[j], layer[i]]; }
+    for (const s of layer) {
+      cx.strokeStyle = toHex(s.color); cx.lineWidth = s.width; cx.lineCap = "round";
+      cx.beginPath(); cx.moveTo(s.q[0], s.q[1]); cx.quadraticCurveTo(s.q[2], s.q[3], s.q[4], s.q[5]); cx.stroke();
+      shapes.push(s);
+    }
+    cur = cx.getImageData(0, 0, w, h).data;
+    if (rad <= rMin * 1.01) break;
+    rad = Math.max(rMin, rad / 2);
+  }
+  autoDoc = { w, h, bg: null, shapes }; autoKey = key;
+  return autoDoc;
+}
+
+/* ---------- Strektegning ----------
+   Kilde: en AI-modell (Informative Drawings, Chan m.fl. CVPR 2022, MIT-lisens) som tegner streker av et vanlig foto,
+   eller et bilde som allerede er en strektegning (f.eks. fra APDrawingGAN). Så blir pikslene til plotterbaner:
+   tynne streker følges langs midten (skjelettering), tykke svarte flater skraveres og får kontur. */
+const ORT_VER = "1.20.1";
+const HF_MODEL = (name) => `https://huggingface.co/ipsilondev/informative-drawings-onnx/resolve/main/${name}.onnx`;
+let ortP = null;
+const sessions = {};
+let lineCache = { key: "", data: null };
+
+async function canFetch(url) { try { const r = await fetch(url, { method: "HEAD" }); return r.ok; } catch (e) { return false; } }
+function getOrt() {
+  if (!ortP) ortP = (async () => {
+    // filer publisert ved siden av siden (claude.ai) eller fra CDN (vanlig nettside / lokal fil)
+    const local = await canFetch("ort/ort-wasm-simd-threaded.wasm");
+    const cdn = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VER}/dist/`;
+    let ort;
+    try { ort = await import(local ? new URL("ort/ort.bundle.min.mjs", location.href).href : cdn + "ort.bundle.min.mjs"); }
+    catch (e) { ort = await import(cdn + "ort.bundle.min.mjs"); }
+    ort.env.wasm.wasmPaths = local ? new URL("ort/", location.href).href : cdn;
+    ort.env.wasm.numThreads = 1;
+    return ort;
+  })().catch((e) => { ortP = null; throw e; });
+  return ortP;
+}
+async function getSession(name) {
+  if (!sessions[name]) sessions[name] = (async () => {
+    const ort = await getOrt();
+    let buf = null;
+    for (const url of [`models/${name}.onnx`, `models/${name}.onnx.b64.txt`, HF_MODEL(name)]) {
+      try {
+        const r = await fetch(url); if (!r.ok) continue;
+        if (url.endsWith(".b64.txt")) { // modellen pakket som tekst (claude.ai serverer ikke .onnx)
+          const bin = atob((await r.text()).trim()), u = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+          buf = u.buffer;
+        } else buf = await r.arrayBuffer();
+        break;
+      } catch (e) {}
+    }
+    if (!buf) throw new Error("Fant ikke modellfilen");
+    return ort.InferenceSession.create(buf, { executionProviders: ["wasm"] });
+  })().catch((e) => { delete sessions[name]; throw e; });
+  return sessions[name];
+}
+
+// Strekbildet: Float32 0..1 (1 = papir), w×h
+async function lineImage(onStatus) {
+  const ai = cfg.laSource === "ai";
+  const key = [img.label, img.w, img.h, img.canvas.width, ai ? cfg.laModel + cfg.laRes : "direct", cfg.invert].join("|");
+  if (lineCache.key === key) return lineCache.data;
+  const src = img.canvas, long = ai ? cfg.laRes : 1100;
+  const k = long / Math.max(src.width, src.height);
+  const w = Math.max(8, Math.round(src.width * k / 8) * 8), h = Math.max(8, Math.round(src.height * k / 8) * 8);
+  const c = document.createElement("canvas"); c.width = w; c.height = h;
+  const x = c.getContext("2d", { willReadFrequently: true });
+  x.fillStyle = "#fff"; x.fillRect(0, 0, w, h); x.drawImage(src, 0, 0, w, h);
+  const d = x.getImageData(0, 0, w, h).data, n = w * h;
+  let out;
+  if (ai) {
+    onStatus("laster AI-modellen (ca. 9 MB første gang)…");
+    const s = await getSession(cfg.laModel);
+    const ort = await getOrt();
+    const t = new Float32Array(3 * n);
+    for (let i = 0; i < n; i++) { t[i] = d[i * 4] / 255; t[n + i] = d[i * 4 + 1] / 255; t[2 * n + i] = d[i * 4 + 2] / 255; }
+    onStatus("AI-en tegner streker…");
+    await new Promise(r => setTimeout(r, 30));
+    const res = await s.run({ [s.inputNames[0]]: new ort.Tensor("float32", t, [1, 3, h, w]) });
+    out = Float32Array.from(res[s.outputNames[0]].data);
+  } else {
+    out = new Float32Array(n);
+    for (let i = 0; i < n; i++) out[i] = (0.2126 * d[i * 4] + 0.7152 * d[i * 4 + 1] + 0.0722 * d[i * 4 + 2]) / 255;
+  }
+  if (cfg.invert) for (let i = 0; i < n; i++) out[i] = 1 - out[i];
+  lineCache = { key, data: { L: out, w, h } };
+  return lineCache.data;
+}
+
+// avstand (i piksler) fra hvert punkt i masken til nærmeste punkt utenfor (chamfer 3-4)
+function distanceIn(mask, w, h) {
+  const D = new Float32Array(w * h), INF = 1e9;
+  for (let i = 0; i < w * h; i++) D[i] = mask[i] ? INF : 0;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x; if (!D[i]) continue;
+    let v = D[i];
+    if (x > 0) v = Math.min(v, D[i - 1] + 3); else v = Math.min(v, 3);
+    if (y > 0) { v = Math.min(v, D[i - w] + 3); if (x > 0) v = Math.min(v, D[i - w - 1] + 4); if (x < w - 1) v = Math.min(v, D[i - w + 1] + 4); } else v = Math.min(v, 3);
+    D[i] = v;
+  }
+  for (let y = h - 1; y >= 0; y--) for (let x = w - 1; x >= 0; x--) {
+    const i = y * w + x; if (!D[i]) continue;
+    let v = D[i];
+    if (x < w - 1) v = Math.min(v, D[i + 1] + 3); else v = Math.min(v, 3);
+    if (y < h - 1) { v = Math.min(v, D[i + w] + 3); if (x < w - 1) v = Math.min(v, D[i + w + 1] + 4); if (x > 0) v = Math.min(v, D[i + w - 1] + 4); } else v = Math.min(v, 3);
+    D[i] = v;
+  }
+  for (let i = 0; i < w * h; i++) D[i] /= 3;
+  return D;
+}
+
+// Zhang-Suen-tynning: streken blir én piksel bred
+function skeletonize(M, w, h) {
+  const S = Uint8Array.from(M), del = [];
+  const P = (x, y) => (x < 0 || y < 0 || x >= w || y >= h) ? 0 : S[y * w + x];
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let pass = 0; pass < 2; pass++) {
+      del.length = 0;
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        if (!S[y * w + x]) continue;
+        const p2 = P(x, y - 1), p3 = P(x + 1, y - 1), p4 = P(x + 1, y), p5 = P(x + 1, y + 1), p6 = P(x, y + 1), p7 = P(x - 1, y + 1), p8 = P(x - 1, y), p9 = P(x - 1, y - 1);
+        const B = p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9;
+        if (B < 2 || B > 6) continue;
+        const A = (!p2 && p3) + (!p3 && p4) + (!p4 && p5) + (!p5 && p6) + (!p6 && p7) + (!p7 && p8) + (!p8 && p9) + (!p9 && p2);
+        if (A !== 1) continue;
+        if (pass === 0 ? (p2 * p4 * p6 || p4 * p6 * p8) : (p2 * p4 * p8 || p2 * p6 * p8)) continue;
+        del.push(y * w + x);
+      }
+      for (const i of del) S[i] = 0;
+      if (del.length) changed = true;
+    }
+  }
+  return S;
+}
+
+// skjelettet → sammenhengende linjer (stopper i ender og kryss)
+function traceSkeleton(S, w, h) {
+  const N8 = [[1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, 1], [-1, -1], [1, -1]];
+  const deg = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (!S[y * w + x]) continue;
+    let c = 0; for (const [dx, dy] of N8) { const X = x + dx, Y = y + dy; if (X >= 0 && Y >= 0 && X < w && Y < h && S[Y * w + X]) c++; }
+    deg[y * w + x] = c;
+  }
+  const used = new Uint8Array(w * h), lines = [];
+  const walk = (x0, y0, x1, y1) => {
+    const pts = [x0, y0]; let x = x1, y = y1, px = x0, py = y0;
+    while (true) {
+      pts.push(x, y);
+      const i = y * w + x;
+      if (deg[i] !== 2) break; // ende eller kryss
+      used[i] = 1;
+      let nxt = null;
+      for (const [dx, dy] of N8) {
+        const X = x + dx, Y = y + dy;
+        if (X < 0 || Y < 0 || X >= w || Y >= h || (X === px && Y === py) || !S[Y * w + X]) continue;
+        if (used[Y * w + X] && deg[Y * w + X] === 2) continue;
+        nxt = [X, Y]; break;
+      }
+      if (!nxt) break;
+      px = x; py = y; [x, y] = nxt;
+    }
+    return pts;
+  };
+  const seen = new Set();
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x;
+    if (!S[i] || deg[i] === 2) continue;
+    for (const [dx, dy] of N8) {
+      const X = x + dx, Y = y + dy;
+      if (X < 0 || Y < 0 || X >= w || Y >= h || !S[Y * w + X]) continue;
+      const j = Y * w + X;
+      if (deg[j] === 2 && used[j]) continue;
+      if (deg[j] !== 2) { const k = Math.min(i, j) + "," + Math.max(i, j); if (seen.has(k)) continue; seen.add(k); }
+      lines.push(walk(x, y, X, Y));
+    }
+  }
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { // lukkede løkker uten ender
+    const i = y * w + x;
+    if (!S[i] || deg[i] !== 2 || used[i]) continue;
+    used[i] = 1;
+    for (const [dx, dy] of N8) { const X = x + dx, Y = y + dy; if (X >= 0 && Y >= 0 && X < w && Y < h && S[Y * w + X] && !used[Y * w + X]) { const p = walk(x, y, X, Y); p.push(x, y); lines.push(p); break; } }
+  }
+  return lines;
+}
+
+// konturer av en maske (marching squares), i rutenettkoordinater
+function maskContours(M, w, h) {
+  const W = w + 2, H = h + 2, val = (i, j) => (i < 1 || j < 1 || i > w || j > h) ? 0 : M[(j - 1) * w + (i - 1)];
+  const ea = [], eb = [], adj = new Map();
+  const key = (i, j, e) => e === 0 ? (j * W + i) * 2 : e === 1 ? (j * W + i + 1) * 2 + 1 : e === 2 ? ((j + 1) * W + i) * 2 : (j * W + i) * 2 + 1;
+  for (let j = 0; j < H - 1; j++) for (let i = 0; i < W - 1; i++) {
+    const c = val(i, j) | (val(i + 1, j) << 1) | (val(i + 1, j + 1) << 2) | (val(i, j + 1) << 3);
+    for (const [e1, e2] of MS[c]) {
+      const a = key(i, j, e1), b = key(i, j, e2), s = ea.length; ea.push(a); eb.push(b);
+      (adj.get(a) || adj.set(a, []).get(a)).push(s); (adj.get(b) || adj.set(b, []).get(b)).push(s);
+    }
+  }
+  const pt = (k) => { const v = k & 1, cell = k >> 1, i = cell % W, j = (cell / W) | 0; return v ? [i - 1, j - 0.5] : [i - 0.5, j - 1]; };
+  const used = new Uint8Array(ea.length), out = [];
+  for (let s = 0; s < ea.length; s++) {
+    if (used[s]) continue;
+    const keys = [ea[s]]; let cur = s, from = ea[s];
+    while (true) {
+      used[cur] = 1; const nk = ea[cur] === from ? eb[cur] : ea[cur]; keys.push(nk);
+      const nx = (adj.get(nk) || []).find(t => !used[t]); if (nx === undefined) break; from = nk; cur = nx;
+    }
+    const p = []; for (const k of keys) p.push(...pt(k));
+    if (p.length >= 6) out.push(p);
+  }
+  return out;
+}
+
+async function genLineArt(L, onStatus) {
+  const { L: Lim, w, h } = await lineImage(onStatus);
+  onStatus("gjør strekene om til plotterbaner…");
+  await new Promise(r => setTimeout(r, 0));
+  const n = w * h, mmPerPx = L.iw / w;
+  // litt utjevning først, så tynne grå streker henger sammen i stedet for å bli stiplet
+  const Ls = cfg.laSmooth > 0 ? boxBlur(Lim, w, h, cfg.laSmooth) : Lim;
+  const B = new Uint8Array(n); for (let i = 0; i < n; i++) B[i] = Ls[i] < cfg.laThr ? 1 : 0;
+  const toMM = (p) => { const o = new Array(p.length); for (let i = 0; i < p.length; i += 2) { o[i] = L.ix + (p[i] + 0.5) * mmPerPx; o[i + 1] = L.iy + (p[i + 1] + 0.5) * mmPerPx; } return o; };
+  const paths = [];
+  // tykke partier: kjerne der streken er bredere enn grensen, vokst tilbake til full bredde
+  let fat = new Uint8Array(n);
+  if (cfg.laFill !== "skeleton") {
+    const D = distanceIn(B, w, h), r = cfg.laFat / 2 / mmPerPx;
+    const core = new Uint8Array(n); let any = false;
+    for (let i = 0; i < n; i++) if (D[i] >= r) { core[i] = 1; any = true; }
+    if (any) {
+      const notCore = new Uint8Array(n); for (let i = 0; i < n; i++) notCore[i] = core[i] ? 0 : 1;
+      const Dc = distanceIn(notCore, w, h); // avstand til kjernen
+      for (let i = 0; i < n; i++) fat[i] = B[i] && Dc[i] <= r + 1 ? 1 : 0;
+    }
+  }
+  const thin = new Uint8Array(n); for (let i = 0; i < n; i++) thin[i] = B[i] && !fat[i] ? 1 : 0;
+  // tynne streker: midtlinjen
+  for (const p of traceSkeleton(skeletonize(thin, w, h), w, h)) paths.push(chaikin(toMM(p)));
+  // flater
+  if (cfg.laFill === "hatch" || cfg.laFill === "both") {
+    const S = (x, y) => { const gx = Math.floor((x - L.ix) / mmPerPx), gy = Math.floor((y - L.iy) / mmPerPx); return gx >= 0 && gy >= 0 && gx < w && gy < h ? fat[gy * w + gx] : 0; };
+    for (const p of scanLines(L, cfg.angle, cfg.spacing, Math.min(0.25, cfg.spacing / 2), (runs, x, y) => { if (S(x, y)) runs.add(x, y); else runs.lift(); })) paths.push(p);
+  }
+  if (cfg.laFill === "outline" || cfg.laFill === "both") for (const p of maskContours(fat, w, h)) paths.push(chaikin(toMM(p)));
+  return paths;
+}
+
+/* ---------- Etterbehandling ---------- */
+function rdp(p, tol) {
+  const n = p.length / 2;
+  if (tol <= 0 || n < 3) return p;
+  const keep = new Uint8Array(n); keep[0] = keep[n - 1] = 1;
+  const stack = [[0, n - 1]];
+  while (stack.length) {
+    const [a, b] = stack.pop();
+    const ax = p[a * 2], ay = p[a * 2 + 1], bx = p[b * 2], by = p[b * 2 + 1];
+    const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy);
+    let md = -1, mi = -1;
+    for (let i = a + 1; i < b; i++) {
+      const d = len < 1e-9 ? Math.hypot(p[i * 2] - ax, p[i * 2 + 1] - ay) // lukket løkke
+        : Math.abs(dy * p[i * 2] - dx * p[i * 2 + 1] + bx * ay - by * ax) / len;
+      if (d > md) { md = d; mi = i; }
+    }
+    if (md > tol) { keep[mi] = 1; stack.push([a, mi], [mi, b]); }
+  }
+  const o = [];
+  for (let i = 0; i < n; i++) if (keep[i]) o.push(p[i * 2], p[i * 2 + 1]);
+  return o;
+}
+function pathLen(p) { let s = 0; for (let i = 2; i < p.length; i += 2) s += Math.hypot(p[i] - p[i - 2], p[i + 1] - p[i - 1]); return s; }
+function reversePath(p) { const o = new Array(p.length); for (let i = 0, n = p.length / 2; i < n; i++) { o[i * 2] = p[(n - 1 - i) * 2]; o[i * 2 + 1] = p[(n - 1 - i) * 2 + 1]; } return o; }
+
+// Grådig sortering: neste strek er den med nærmeste ende (kan snus)
+function orderPaths(paths, L, start) {
+  const n = paths.length; if (n < 2) return paths;
+  const cs = Math.max(1, Math.sqrt(L.pw * L.ph / n) * 1.2);
+  const gw = Math.ceil(L.pw / cs) + 2, gh = Math.ceil(L.ph / cs) + 2;
+  const cells = Array.from({ length: gw * gh }, () => []);
+  const cellIdx = (x, y) => clamp(Math.floor(y / cs), 0, gh - 1) * gw + clamp(Math.floor(x / cs), 0, gw - 1);
+  paths.forEach((p, i) => { cells[cellIdx(p[0], p[1])].push(i * 2); cells[cellIdx(p[p.length - 2], p[p.length - 1])].push(i * 2 + 1); });
+  const used = new Uint8Array(n), out = [];
+  let [cx, cy] = start, left = n;
+  while (left) {
+    const gx = clamp(Math.floor(cx / cs), 0, gw - 1), gy = clamp(Math.floor(cy / cs), 0, gh - 1);
+    let best = -1, bd = Infinity;
+    for (let r = 0; r < Math.max(gw, gh); r++) {
+      for (let j = gy - r; j <= gy + r; j++) {
+        if (j < 0 || j >= gh) continue;
+        for (let i = gx - r; i <= gx + r; i++) {
+          if (i < 0 || i >= gw || (Math.abs(j - gy) !== r && Math.abs(i - gx) !== r)) continue;
+          const cell = cells[j * gw + i];
+          for (let q = cell.length - 1; q >= 0; q--) {
+            const e = cell[q], pi = e >> 1;
+            if (used[pi]) { cell[q] = cell[cell.length - 1]; cell.pop(); continue; }
+            const p = paths[pi], o = e & 1 ? p.length - 2 : 0;
+            const d = Math.hypot(p[o] - cx, p[o + 1] - cy);
+            if (d < bd) { bd = d; best = e; }
+          }
+        }
+      }
+      if (best >= 0 && bd <= r * cs) break;
+    }
+    const pi = best >> 1; used[pi] = 1; left--;
+    const p = best & 1 ? reversePath(paths[pi]) : paths[pi];
+    out.push(p); cx = p[p.length - 2]; cy = p[p.length - 1];
+  }
+  return out;
+}
+
+function joinPaths(paths, tol) {
+  if (tol <= 0 || paths.length < 2) return paths;
+  const out = [paths[0].slice()];
+  for (let i = 1; i < paths.length; i++) {
+    const a = out[out.length - 1], b = paths[i];
+    if (Math.hypot(b[0] - a[a.length - 2], b[1] - a[a.length - 1]) <= tol) { for (let k = 0; k < b.length; k++) a.push(b[k]); }
+    else out.push(b.slice());
+  }
+  return out;
+}
+
+/* ---------- Pipeline ---------- */
+let result = null; // { L, layers: [{ name, color, paths }], stats }
+let timer = 0, token = 0;
+
+function penSet() {
+  if (cfg.colorMode === "cmyk") return [
+    { ch: "y", name: "Gul", color: "#f2d21b" }, { ch: "m", name: "Magenta", color: "#e3337a" },
+    { ch: "c", name: "Cyan", color: "#1c9bd6" }, { ch: "k", name: "Svart", color: "#1b1b1f" }];
+  if (cfg.colorMode === "duo") return [{ ch: "mid", name: "Penn 2", color: cfg.penColor2 }, { ch: "dark", name: "Penn 1", color: cfg.penColor }];
+  return [{ ch: "luma", name: "Penn 1", color: cfg.penColor }];
+}
+
+async function compute(my) {
+  const L = layout();
+  const pens = cfg.style === "codepainter" || cfg.style === "lineart" ? [] : penSet();
+  const layers = [];
+  let start = [0, 0];
+  if (cfg.style === "lineart") {
+    let paths = await genLineArt(L, (t) => { if (my === token) $("busy").textContent = t; });
+    if (my !== token) return null;
+    paths = paths.map(p => rdp(p, cfg.simplify)).filter(p => pathLen(p) >= cfg.minLen);
+    if (cfg.sort) paths = orderPaths(paths, L, start);
+    paths = joinPaths(paths, cfg.joinTol);
+    layers.push({ name: "Penn 1", color: cfg.penColor, paths });
+  }
+  if (cfg.style === "codepainter") {
+    const doc = cfg.cpSource === "file" && cpDoc ? cpDoc : autoPaint(L);
+    for (const ly of genCodePainter(L, doc)) {
+      if (cfg.cpPens > 1 && luma(parseColor(ly.color)) > 0.9) continue; // nesten hvitt: det er papiret som gjør jobben
+      let paths = ly.paths.map(p => rdp(p, cfg.simplify)).filter(p => pathLen(p) >= cfg.minLen);
+      if (cfg.sort) paths = orderPaths(paths, L, start);
+      paths = joinPaths(paths, cfg.joinTol);
+      if (paths.length) { const last = paths[paths.length - 1]; start = [last[last.length - 2], last[last.length - 1]]; }
+      layers.push({ ...ly, paths });
+    }
+  }
+  for (const [li, pen] of pens.entries()) {
+    let field;
+    if (pen.ch === "dark" || pen.ch === "mid") {
+      const base = channelField("luma");
+      field = new Float32Array(base.length);
+      for (let i = 0; i < base.length; i++) {
+        const v = base[i];
+        field[i] = pen.ch === "dark" ? clamp((v - 0.45) / 0.55, 0, 1) : clamp(v / 0.6, 0, 1) * (v < 0.85 ? 1 : 0.6);
+      }
+    } else field = channelField(pen.ch);
+    const S = makeSampler(field, L);
+    const li2 = pens.length > 1 ? li : 0;
+    let paths;
+    const onProgress = (partial, label) => {
+      if (my !== token) return;
+      $("busy").textContent = label + (pens.length > 1 ? ` · ${pen.name}` : "");
+      drawLive(L, [...layers, { ...pen, paths: partial }]);
+    };
+    switch (cfg.style) {
+      case "growth": paths = await genGrowth(S, L, li2, onProgress); break;
+      case "string": paths = await genString(S, L, li2, onProgress); break;
+      case "waves": paths = genWaves(S, L, li2); break;
+      case "spiral": paths = genSpiral(S, L, li2); break;
+      case "contour": paths = genContour(field, L); break;
+      case "stipple": paths = genStipple(S, L, li2); break;
+      case "tsp": paths = genTSP(S, L, li2); break;
+      default: paths = genHatch(S, L, li2, pens.length);
+    }
+    paths = paths.map(p => rdp(p, cfg.simplify)).filter(p => cfg.style === "stipple" || pathLen(p) >= cfg.minLen);
+    if (cfg.sort && cfg.style !== "string") paths = orderPaths(paths, L, start);
+    paths = joinPaths(paths, cfg.joinTol);
+    if (paths.length) { const last = paths[paths.length - 1]; start = [last[last.length - 2], last[last.length - 1]]; }
+    layers.push({ ...pen, paths });
+    if (my !== token) return null;
+  }
+  // statistikk
+  let draw = 0, travel = 0, lifts = 0, pts = 0;
+  for (const ly of layers) {
+    let cx = 0, cy = 0;
+    for (const p of ly.paths) { travel += Math.hypot(p[0] - cx, p[1] - cy); draw += pathLen(p); lifts++; pts += p.length / 2; cx = p[p.length - 2]; cy = p[p.length - 1]; }
+    travel += Math.hypot(cx, cy);
+  }
+  const secs = draw / cfg.speed + travel / (cfg.speed * 2.5) + lifts * 0.25;
+  return { L, layers, stats: { draw, travel, lifts, pts, secs } };
+}
+
+function schedule() {
+  if (!img) return;
+  clearTimeout(timer);
+  $("busy").hidden = false;
+  const my = ++token;
+  stopWorkers();
+  $("busy").textContent = "beregner…";
+  timer = setTimeout(() => {
+    requestAnimationFrame(() => setTimeout(async () => {
+      if (my !== token) return;
+      stopAnim();
+      try { const r = await compute(my); if (my !== token || !r) return; result = r; }
+      catch (e) {
+        if (my !== token) return; console.error(e);
+        toast(cfg.style === "lineart" && cfg.laSource === "ai" ? "Klarte ikke å laste AI-modellen. Sjekk nettforbindelsen og prøv igjen." : "Noe gikk galt under beregningen.");
+      }
+      $("busy").hidden = true;
+      draw(); showStats();
+    }, 0));
+  }, ["tsp", "growth", "string", "lineart"].includes(cfg.style) ? 400 : 120);
+}
+
+function fmtTime(s) {
+  if (s < 60) return Math.round(s) + " s";
+  const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60);
+  return h ? `${h} t ${m} min` : `${m} min`;
+}
+function showStats() {
+  if (!result) return;
+  const { stats: s, L } = result;
+  $("stats").innerHTML =
+    `<span>papir <b>${+L.pw.toFixed(1)}×${+L.ph.toFixed(1)} mm</b></span>` +
+    `<span>streker <b>${s.lifts.toLocaleString("no")}</b></span>` +
+    `<span>blekk <b>${(s.draw / 1000).toFixed(1)} m</b></span>` +
+    `<span>pennløft <b>${(s.travel / 1000).toFixed(1)} m</b></span>` +
+    `<span>tid <b>≈ ${fmtTime(s.secs)}</b></span>`;
+}
+
+/* ---------- Tegning på skjermen ---------- */
+const view = $("view"), vctx = view.getContext("2d");
+let anim = null;
+
+function viewTransform() {
+  const r = view.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  const W = Math.max(1, Math.round(r.width * dpr)), H = Math.max(1, Math.round(r.height * dpr));
+  if (view.width !== W || view.height !== H) { view.width = W; view.height = H; }
+  const L = result ? result.L : layout();
+  const pad = 22 * dpr, k = Math.min((W - 2 * pad) / L.pw, (H - 2 * pad) / L.ph);
+  return { k, ox: (W - L.pw * k) / 2, oy: (H - L.ph * k) / 2, dpr, W, H, L };
+}
+
+function drawSheet(T) {
+  const { k, ox, oy, L, dpr } = T;
+  vctx.setTransform(1, 0, 0, 1, 0, 0);
+  vctx.clearRect(0, 0, T.W, T.H);
+  vctx.fillStyle = "rgba(0,0,0,.28)"; vctx.fillRect(ox + 3 * dpr, oy + 4 * dpr, L.pw * k, L.ph * k);
+  vctx.fillStyle = cssVar("--sheet"); vctx.fillRect(ox, oy, L.pw * k, L.ph * k);
+  vctx.setTransform(k, 0, 0, k, ox, oy);
+  // millimeter-tikker langs kanten
+  vctx.strokeStyle = "rgba(40,60,90,.35)"; vctx.lineWidth = 0.6 * dpr / k; vctx.beginPath();
+  for (let x = 0; x <= L.pw; x += 10) { const t = x % 50 === 0 ? 4 : 2; vctx.moveTo(x, 0); vctx.lineTo(x, t); }
+  for (let y = 0; y <= L.ph; y += 10) { const t = y % 50 === 0 ? 4 : 2; vctx.moveTo(0, y); vctx.lineTo(t, y); }
+  vctx.stroke();
+  if (cfg.showImage && img) { vctx.globalAlpha = 0.18; vctx.drawImage(img.canvas, L.ix, L.iy, L.iw, L.ih); vctx.globalAlpha = 1; }
+}
+function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim() || "#fff"; }
+
+function strokeSetup(T, color) {
+  vctx.strokeStyle = color; vctx.lineCap = "round"; vctx.lineJoin = "round";
+  // streker tynnere enn 1 skjermpiksel: 1 piksel bred, men gjennomsiktig i samme forhold, så tonen blir riktig
+  const px = cfg.penWidth * T.k;
+  vctx.lineWidth = px < 1 ? 1 / T.k : cfg.penWidth;
+  vctx.globalAlpha = px < 1 ? Math.max(0.08, px) : 1;
+  vctx.globalCompositeOperation = cfg.colorMode === "mono" ? "source-over" : "multiply";
+}
+function strokePath(p, upto) {
+  vctx.beginPath(); vctx.moveTo(p[0], p[1]);
+  const n = upto == null ? p.length : upto;
+  for (let i = 2; i < n; i += 2) vctx.lineTo(p[i], p[i + 1]);
+  if (p.length === 2 || (p.length === 4 && p[0] === p[2] && p[1] === p[3])) vctx.lineTo(p[0] + 0.01, p[1]);
+  vctx.stroke();
+}
+function drawTravel(T, layers) {
+  vctx.globalCompositeOperation = "source-over";
+  vctx.strokeStyle = cssVar("--travel"); vctx.lineWidth = 0.8 * T.dpr / T.k; vctx.setLineDash([2 * T.dpr / T.k, 2 * T.dpr / T.k]);
+  vctx.beginPath();
+  for (const ly of layers) { let cx = 0, cy = 0; for (const p of ly.paths) { vctx.moveTo(cx, cy); vctx.lineTo(p[0], p[1]); cx = p[p.length - 2]; cy = p[p.length - 1]; } }
+  vctx.stroke(); vctx.setLineDash([]);
+}
+
+// Mellomresultat mens en worker regner (vekst, trådkunst)
+function drawLive(L, layers) {
+  const T = viewTransform(); T.L = L;
+  const k = Math.min((T.W - 44 * T.dpr) / L.pw, (T.H - 44 * T.dpr) / L.ph);
+  Object.assign(T, { k, ox: (T.W - L.pw * k) / 2, oy: (T.H - L.ph * k) / 2 });
+  drawSheet(T);
+  for (const ly of layers) { strokeSetup(T, ly.color); for (const p of ly.paths) strokePath(p); }
+  vctx.globalCompositeOperation = "source-over"; vctx.globalAlpha = 1;
+}
+
+function draw() {
+  if (anim) return;
+  const T = viewTransform();
+  drawSheet(T);
+  if (!result) return;
+  for (const ly of result.layers) { strokeSetup(T, ly.color); for (const p of ly.paths) strokePath(p); }
+  vctx.globalAlpha = 1;
+  if (cfg.showTravel) drawTravel(T, result.layers);
+  vctx.globalCompositeOperation = "source-over";
+}
+
+function stopAnim() {
+  if (anim) { cancelAnimationFrame(anim.raf); anim = null; }
+  $("play").textContent = "▶ Simuler plotting"; $("play").setAttribute("aria-pressed", "false");
+}
+function startAnim() {
+  if (!result) return;
+  const T = viewTransform();
+  drawSheet(T);
+  const queue = [];
+  for (const ly of result.layers) for (const p of ly.paths) queue.push([ly.color, p]);
+  anim = { qi: 0, pi: 2, T, raf: 0, px: 0, py: 0 };
+  $("play").textContent = "■ Stopp"; $("play").setAttribute("aria-pressed", "true");
+  const tick = () => {
+    if (!anim) return;
+    let budget = cfg.animSpeed * 6; // mm per bilde
+    vctx.setTransform(T.k, 0, 0, T.k, T.ox, T.oy);
+    while (budget > 0 && anim.qi < queue.length) {
+      const [color, p] = queue[anim.qi];
+      if (anim.pi === 2) {
+        budget -= Math.hypot(p[0] - anim.px, p[1] - anim.py) / 2.5;
+        if (cfg.showTravel) { vctx.globalCompositeOperation = "source-over"; vctx.globalAlpha = 1; vctx.strokeStyle = cssVar("--travel"); vctx.lineWidth = 0.8 * T.dpr / T.k; vctx.setLineDash([2 * T.dpr / T.k, 2 * T.dpr / T.k]); vctx.beginPath(); vctx.moveTo(anim.px, anim.py); vctx.lineTo(p[0], p[1]); vctx.stroke(); vctx.setLineDash([]); }
+      }
+      strokeSetup(T, color);
+      vctx.beginPath(); vctx.moveTo(p[anim.pi - 2], p[anim.pi - 1]);
+      if (p.length === 2) vctx.lineTo(p[0] + 0.01, p[1]);
+      while (anim.pi < p.length && budget > 0) { vctx.lineTo(p[anim.pi], p[anim.pi + 1]); budget -= Math.hypot(p[anim.pi] - p[anim.pi - 2], p[anim.pi + 1] - p[anim.pi - 1]); anim.pi += 2; }
+      vctx.stroke();
+      anim.px = p[anim.pi - 2]; anim.py = p[anim.pi - 1];
+      if (anim.pi >= p.length) { anim.qi++; anim.pi = 2; }
+    }
+    vctx.globalCompositeOperation = "source-over"; vctx.globalAlpha = 1;
+    if (anim.qi >= queue.length) { anim = null; stopAnim(); draw(); return; }
+    anim.raf = requestAnimationFrame(tick);
+  };
+  anim.raf = requestAnimationFrame(tick);
+}
+
+/* ---------- Eksport ---------- */
+const num = (v) => { const s = v.toFixed(2); return s.includes(".") ? s.replace(/\.?0+$/, "") : s; };
+function svgFor(layers) {
+  const L = result.L;
+  const meta = JSON.stringify(cfg).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  let s = `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="${num(L.pw)}mm" height="${num(L.ph)}mm" viewBox="0 0 ${num(L.pw)} ${num(L.ph)}">\n`;
+  s += `<metadata><strekverk-settings>${meta}</strekverk-settings></metadata>\n`;
+  layers.forEach((ly) => {
+    const idx = result.layers.indexOf(ly) + 1;
+    s += `<g inkscape:groupmode="layer" inkscape:label="${idx} ${ly.name}" id="layer${idx}" fill="none" stroke="${ly.color}" stroke-width="${num(cfg.penWidth)}" stroke-linecap="round" stroke-linejoin="round">\n`;
+    for (const p of ly.paths) {
+      let d = `M${num(p[0])} ${num(p[1])}`;
+      if (p.length === 2) d += `h0.01`;
+      for (let i = 2; i < p.length; i += 2) d += `L${num(p[i])} ${num(p[i + 1])}`;
+      s += `<path d="${d}"/>\n`;
+    }
+    s += `</g>\n`;
+  });
+  return s + `</svg>\n`;
+}
+function gcodeFor() {
+  const L = result.L, Y = (y) => cfg.gcFlipY ? L.ph - y : y, dw = cfg.gcDwell > 0 ? `G4 P${cfg.gcDwell}\n` : "";
+  let g = `; Strekverk – ${num(L.pw)}x${num(L.ph)} mm\nG21\nG90\n${cfg.gcUp}\n${dw}`;
+  result.layers.forEach((ly, i) => {
+    if (i > 0) g += `${cfg.gcUp}\nG0 X0 Y0 F${cfg.gcTravel}\nM0 ; bytt til ${ly.name}\n`;
+    g += `; lag ${i + 1}: ${ly.name}\n`;
+    for (const p of ly.paths) {
+      g += `G0 X${num(p[0])} Y${num(Y(p[1]))} F${cfg.gcTravel}\n${cfg.gcDown}\n${dw}`;
+      for (let k = 2; k < p.length; k += 2) g += `G1 X${num(p[k])} Y${num(Y(p[k + 1]))} F${cfg.gcFeed}\n`;
+      g += `${cfg.gcUp}\n${dw}`;
+    }
+  });
+  return g + `G0 X0 Y0 F${cfg.gcTravel}\nM2\n`;
+}
+
+function baseName() { return "strekverk-" + cfg.style + "-" + (cfg.paper === "Egendefinert" ? "egen" : cfg.paper.replace(/\s+/g, "")); }
+// I claude.ai-artefakter går lagring via plattformens nedlastingsfunksjon; ellers vanlig nedlasting.
+const dlCap = window.claude?.use ? window.claude.use("downloads").catch(() => null) : Promise.resolve(null);
+async function download(name, text, type) {
+  const cap = await dlCap;
+  if (cap) {
+    if (name.endsWith(".gcode")) name += ".txt"; // .gcode er ikke tillatt der
+    try { await cap.save({ filename: name, data: text }); toast("Lagret " + name); }
+    catch (e) {
+      if (e?.code === "declined") return;
+      if (e?.code === "rate_limited") { toast("Vent litt og prøv igjen."); return; }
+      showFallback(text); toast("Kunne ikke lagre her. Kopier teksten under.");
+    }
+    return;
+  }
+  try {
+    const url = URL.createObjectURL(new Blob([text], { type }));
+    const a = document.createElement("a"); a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    toast("Lagret " + name);
+  } catch (e) { showFallback(text); }
+}
+function showFallback(text) { $("fallback").hidden = false; $("fallback-text").value = text; }
+async function copy(text) {
+  try { await navigator.clipboard.writeText(text); toast("SVG kopiert. Lim den inn i en tom .svg-fil eller i Inkscape."); }
+  catch (e) { showFallback(text); $("fallback-text").select(); toast("Kunne ikke kopiere automatisk. Marker teksten under."); }
+}
+
+let toastT = 0;
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 2800); }
+
+/* ---------- Stilknapper med små ikoner ---------- */
+function buildStyles() {
+  const host = $("styles");
+  for (const [k, name] of Object.entries(STYLES)) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "style-btn"; b.dataset.style = k;
+    b.innerHTML = `<canvas width="120" height="76" aria-hidden="true"></canvas><span>${name}</span>`;
+    b.addEventListener("click", () => {
+      cfg.style = k; syncUI(); saveCfg(); schedule();
+    });
+    host.appendChild(b);
+    drawIcon(b.querySelector("canvas"), k);
+  }
+}
+function drawIcon(c, k) {
+  const x = c.getContext("2d"), W = c.width, H = c.height;
+  x.strokeStyle = getComputedStyle(document.body).color; x.lineWidth = 1.3; x.lineCap = "round";
+  const dark = (px, py) => Math.max(0, 1 - Math.hypot(px - W / 2, py - H / 2) / (H * .55));
+  x.beginPath();
+  if (k === "hatch") { for (let i = -H; i < W; i += 6) { for (let t = 0; t < H; t += 2) { const px = i + t, py = t; if (dark(px, py) > .2) { x.moveTo(px, py); x.lineTo(px + 2, py + 2); } } } for (let i = 0; i < W + H; i += 6) for (let t = 0; t < H; t += 2) { const px = i - t, py = t; if (dark(px, py) > .55) { x.moveTo(px, py); x.lineTo(px - 2, py + 2); } } }
+  else if (k === "waves") { for (let y = 8; y < H; y += 8) { x.moveTo(0, y); for (let px = 0; px < W; px++) { const d = dark(px, y); x.lineTo(px, y + 3.4 * d * Math.sin(px * (0.3 + d * .6))); } } }
+  else if (k === "spiral") { let first = true; for (let t = 0; t < 40; t += .05) { const r = t * 1.05, px = W / 2 + r * Math.cos(t), py = H / 2 + r * Math.sin(t); if (r > H * .55) break; const d = dark(px, py), o = 2 * d * Math.sin(t * 9); if (first) { x.moveTo(px + o * Math.cos(t), py); first = false; } else x.lineTo(px + o * Math.cos(t), py + o * Math.sin(t)); } }
+  else if (k === "contour") { for (let r = 6; r < H * .6; r += 7) { x.moveTo(W / 2 + r * 1.3, H / 2); for (let a = 0; a <= 6.3; a += .1) x.lineTo(W / 2 + r * 1.3 * Math.cos(a) * (1 + .1 * Math.sin(a * 3)), H / 2 + r * .8 * Math.sin(a)); } }
+  else if (k === "lineart") { x.lineWidth = 1.2; x.moveTo(W * .3, H * .15); x.bezierCurveTo(W * .1, H * .5, W * .25, H * .95, W * .5, H * .9); x.bezierCurveTo(W * .75, H * .95, W * .9, H * .5, W * .7, H * .15); x.moveTo(W * .38, H * .45); x.lineTo(W * .45, H * .45); x.moveTo(W * .55, H * .45); x.lineTo(W * .62, H * .45); x.moveTo(W * .5, H * .5); x.lineTo(W * .47, H * .64); x.lineTo(W * .52, H * .65); x.moveTo(W * .42, H * .76); x.quadraticCurveTo(W * .5, H * .8, W * .58, H * .76); }
+  else if (k === "codepainter") { for (let i = 0; i < 9; i++) { const y0 = 12 + i * 6.5, bend = Math.sin(i * 1.7) * 10; for (let j = 0; j < 3; j++) { x.moveTo(14 + i * 3, y0 + j * 1.6); x.quadraticCurveTo(W / 2, y0 + bend + j * 1.6, W - 14 - i * 2, y0 + 4 + j * 1.6); } } }
+  else if (k === "growth") { let s = 5; const rnd = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296); const ph = Array.from({ length: 7 }, () => rnd() * 6); let first = true; for (let a = 0; a <= 6.30; a += .02) { let r = H * .34; for (let q = 0; q < 7; q++) r += Math.sin(a * (q * 3 + 4) + ph[q]) * H * .045 / (1 + q * .3); const X = W / 2 + r * 1.45 * Math.cos(a), Y = H / 2 + r * Math.sin(a); first ? (x.moveTo(X, Y), first = false) : x.lineTo(X, Y); } }
+  else if (k === "string") { const P = 28, R = H * .44, pt = (i) => [W / 2 + R * Math.cos(i / P * 6.2832), H / 2 + R * Math.sin(i / P * 6.2832)]; let c = 0; x.moveTo(...pt(0)); for (let t = 0; t < 26; t++) { c = (c + 11 + (t % 3)) % P; x.lineTo(...pt(c)); } }
+  else if (k === "stipple" || k === "tsp") { let s = 3; const rnd = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296); const pts = []; for (let i = 0; i < 700 && pts.length < 90; i++) { const px = rnd() * W, py = rnd() * H; if (rnd() < dark(px, py)) pts.push([px, py]); } if (k === "stipple") for (const [px, py] of pts) { x.moveTo(px + 1.2, py); x.arc(px, py, 1.2, 0, 7); } else { let cur = pts.shift(); x.moveTo(...cur); while (pts.length) { let bi = 0, bd = 1e9; pts.forEach((p, i) => { const d = Math.hypot(p[0] - cur[0], p[1] - cur[1]); if (d < bd) { bd = d; bi = i; } }); cur = pts.splice(bi, 1)[0]; x.lineTo(...cur); } } }
+  x.stroke();
+}
+
+/* ---------- Oppstart og hendelser ---------- */
+buildStyles();
+buildControls();
+syncUI();
+for (const name of Object.keys(DEMOS)) {
+  const b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.textContent = name; b.dataset.demo = name;
+  b.addEventListener("click", () => loadDemo(name)); $("demos").appendChild(b);
+}
+$("file").addEventListener("change", (e) => { loadFile(e.target.files[0]); e.target.value = ""; });
+$("reset").addEventListener("click", () => { const st = cfg.style; cfg = { ...DEFAULTS, style: st }; syncUI(); saveCfg(); schedule(); toast("Innstillingene er nullstilt"); });
+$("play").addEventListener("click", () => anim ? (stopAnim(), draw()) : startAnim());
+$("dl-svg").addEventListener("click", () => result && download(baseName() + ".svg", svgFor(result.layers), "image/svg+xml"));
+$("dl-layers").addEventListener("click", () => {
+  if (!result) return;
+  (async () => { // én om gangen, så nettleseren ikke blokkerer flere nedlastinger
+    for (const [i, ly] of result.layers.entries()) {
+      await download(`${baseName()}-${i + 1}-${ly.name.toLowerCase().replace(/\s+/g, "")}.svg`, svgFor([ly]), "image/svg+xml");
+      await new Promise(r => setTimeout(r, 400));
+    }
+  })();
+});
+$("dl-gcode").addEventListener("click", () => result && download(baseName() + ".gcode", gcodeFor(), "text/plain"));
+$("copy-svg").addEventListener("click", () => result && copy(svgFor(result.layers)));
+
+let dragN = 0;
+addEventListener("dragenter", (e) => { e.preventDefault(); dragN++; $("drop").hidden = false; });
+addEventListener("dragleave", () => { if (--dragN <= 0) { dragN = 0; $("drop").hidden = true; } });
+addEventListener("dragover", (e) => e.preventDefault());
+addEventListener("drop", (e) => { e.preventDefault(); dragN = 0; $("drop").hidden = true; const f = e.dataTransfer.files[0]; if (f) loadFile(f); });
+addEventListener("paste", (e) => { const f = [...(e.clipboardData?.files || [])][0]; if (f) loadFile(f); });
+new ResizeObserver(() => { if (!anim) draw(); }).observe($("stage"));
+matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => draw());
+
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (img && img.label === "Tekst") loadDemo("Tekst"); });
+loadDemo("Kuler");
+</script>
+</body>
+</html>
